@@ -1,3 +1,3 @@
-from .wrapper import add_numbers
+from .wrapper import add_numbers, get_beta
 
-__all__ = ["add_numbers"]
+__all__ = ["add_numbers", "get_beta"]
