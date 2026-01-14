@@ -1,0 +1,23 @@
+[build-system]
+requires = [
+  "scikit-build-core>=0.9,<0.11",
+  "pybind11>=2.11",
+  "packaging>=23.1",
+  "setuptools>=68"
+]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "napypi"
+version = "0.1.0"
+description = "Fast numerical algorithms with C++ backend"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [{name = "Your Name"}]
+
+dependencies = ["numpy"]
+
+[tool.scikit-build]
+build-dir = "build/{wheel_tag}"
+wheel.packages = ["python/napypi"]
