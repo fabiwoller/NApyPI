@@ -9,19 +9,20 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "napypi"
-version = "0.4.10"
+version = "0.4.11"
 description = "Efficient statistics in Python for large-scale heterogeneous data with enhanced support for missing data"
 readme = "README.md"
 requires-python = ">=3.9, <3.12"
 license = { text = "GPL-3.0-only" }
 license-files = ["LICENSE"]
 authors = [{name = "Fabian Woller"}]
-dependencies = ["numpy", 
+dependencies = [
                 "torch", 
                 "pandas",
                 "numba",
                 "numba-scipy",
-                "scipy==1.11.0"
+                "numpy>=1.26,<2.0",
+                "scipy>=1.11.1,<1.12"
                 ]
 
 [tool.scikit-build]
