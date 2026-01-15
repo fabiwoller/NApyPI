@@ -18,7 +18,8 @@ jobs:
       - uses: pypa/cibuildwheel@v2.16
         env:
           CIBW_BUILD: cp39-* cp310-* cp311-* cp312-*"
-          CIBW_SKIP: "pp* *-win32 *-manylinux_i686 *-musllinux_i686"
+          CIBW_SKIP: "pp* *-win32 
+          #CIBW_SKIP: "pp* *-win32 *-manylinux_i686 *-musllinux_i686"
           CIBW_BEFORE_BUILD_MACOS: "brew install libomp"
           # Tell CMake where to find OMP on macOS.
           CIBW_ENVIRONMENT_MACOS: >
@@ -27,4 +28,5 @@ jobs:
           CIBW_REPAIR_WHEEL_COMMAND_MACOS: "delocate-listdeps {wheel} && delocate-wheel --require-archs {delocate_archs} -w {dest_dir} {wheel}"
           # Test step.
           CIBW_TEST_COMMAND: >
-            python -c "import napypi; print(napypi.__version__)"
+          pip install torch --index-url https://download.pytorch.org/whl/cpu &&
+          python -c "import napypi; print(napypi.__version__)"
