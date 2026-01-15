@@ -9,10 +9,10 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "napypi"
-version = "0.4.3"
+version = "0.4.4"
 description = "Efficient statistics in Python for large-scale heterogeneous data with enhanced support for missing data"
 readme = "README.md"
-requires-python = ">=3.9, <=3.12"
+requires-python = ">=3.10, <=3.12"
 license = { text = "GPL-3.0-only" }
 license-files = ["LICENSE"]
 authors = [{name = "Fabian Woller"}]

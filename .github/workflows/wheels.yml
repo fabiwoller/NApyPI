@@ -17,7 +17,7 @@ jobs:
 
       - uses: pypa/cibuildwheel@v2.16
         env:
-          CIBW_BUILD: cp39-* cp310-* cp311-* cp312-*"
+          CIBW_BUILD: cp310-* cp311-* cp312-*"
           CIBW_SKIP: "pp*"
           CIBW_BEFORE_BUILD_MACOS: "brew install libomp"
           # Tell CMake where to find OMP on macOS.
