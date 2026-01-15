@@ -12,8 +12,9 @@ name = "napypi"
 version = "0.2.2"
 description = "Efficient statistics in Python for large-scale heterogeneous data with enhanced support for missing data"
 readme = "README.md"
-requires-python = ">=3.8"
-license = {text = "GNU GPL v3.0"}
+requires-python = ">=3.8, <=3.12"
+license = { text = "GPL-3.0-only" }
+license-files = ["LICENSE"]
 authors = [{name = "Fabian Woller"}]
 dependencies = ["numpy", "torch", "scipy", "pandas"]
 
