@@ -1,5 +1,7 @@
 from ._core import set_num_threads, pearson_with_nans, spearman_with_nans, chi_squared_with_nans
 from ._core import anova_with_nans, kruskal_wallis_with_nans, t_test_with_nans, mwu_with_nans, DataMatrix
+from .numba_core import pearson_numba, spearman_numba, chi2_numba, kruskal_wallis_numba
+from .numba_core import ttest_numba, mann_whitney_numba, anova_numba
 import numpy as np
 import torch
 import scipy as sc
@@ -169,7 +171,7 @@ def transform_output(output_dic, axis, data_one, data_two=None):
         return output_dic
     
 def pearsonr(data : np.array, nan_value : float = -999, axis : int = 0, threads : int = 1,
-             return_types : list[str] = []):
+             return_types : list[str] = [], use_numba : bool = True):
     """Computes NA-aware Pearson correlation on given data matrix between all
     combinations of variables and returns r-squared values as well as pvalues.
 
@@ -206,16 +208,16 @@ def pearsonr(data : np.array, nan_value : float = -999, axis : int = 0, threads 
     nan_value = float(nan_value)
     
     # Use CPP-based correlation computation with OpenMP.
-    #if not use_numba:
-    # Set number of desired threads for computation.
-    set_num_threads(threads)
-    data_mat = DataMatrix(data)
-    corr_mat, pvalue_mat = pearson_with_nans(data_mat, nan_value)
-    corr_mat = np.array(corr_mat, copy=False)
-    pvalue_mat = np.array(pvalue_mat, copy=False)
+    if not use_numba:
+        # Set number of desired threads for computation.
+        set_num_threads(threads)
+        data_mat = DataMatrix(data)
+        corr_mat, pvalue_mat = pearson_with_nans(data_mat, nan_value)
+        corr_mat = np.array(corr_mat, copy=False)
+        pvalue_mat = np.array(pvalue_mat, copy=False)
 
-    #else: # Use numba-based python implementation.
-    #    corr_mat, pvalue_mat = libnapy_numba.pearson_numba(data, nan_value, threads)
+    else: # Use numba-based python implementation.
+        corr_mat, pvalue_mat = pearson_numba(data, nan_value, threads)
     
     # Clip values to range 0 and 1 (rounding errors)
     pvalue_mat = np.clip(pvalue_mat, a_min=0.0, a_max=1.0)
@@ -279,16 +281,16 @@ def spearmanr(data : np.array, nan_value : float = -999, axis : int = 0, threads
     data = np.array(data, copy=False, dtype=np.float64)
     nan_value = float(nan_value)
 
-    #if not use_numba:
-    # Set number of desired threads for computation.
-    set_num_threads(threads)
-    # Convert into wrapper object.
-    data_mat = DataMatrix(data)
-    corr_mat, pvalue_mat = spearman_with_nans(data_mat, nan_value)
-    corr_mat = np.array(corr_mat, copy=False)
-    pvalue_mat = np.array(pvalue_mat, copy=False)
-    #else:
-    #    corr_mat, pvalue_mat = libnapy_numba.spearman_numba(data, nan_value, threads)
+    if not use_numba:
+        # Set number of desired threads for computation.
+        set_num_threads(threads)
+        # Convert into wrapper object.
+        data_mat = DataMatrix(data)
+        corr_mat, pvalue_mat = spearman_with_nans(data_mat, nan_value)
+        corr_mat = np.array(corr_mat, copy=False)
+        pvalue_mat = np.array(pvalue_mat, copy=False)
+    else:
+        corr_mat, pvalue_mat = spearman_numba(data, nan_value, threads)
         
     # Clip values to range 0 and 1 (rounding errors)
     pvalue_mat = np.clip(pvalue_mat, a_min=0.0, a_max=1.0)
@@ -372,26 +374,26 @@ def chi_squared(data : np.array, nan_value : float = -999, axis : int = 0, threa
     else:
         return_types_mod = set(return_types)
 
-    #if not use_numba:
-    # Set number of desired threads for computation.
-    set_num_threads(threads)
-    # Convert into wrapper object.
-    data_mat = DataMatrix(data)
-    result_dict = chi_squared_with_nans(data_mat, categories_per_var, nan_value, return_types_mod)
-    #else:
-    #    nan_value = int(nan_value)
-    #    compute_pvalues = 'p_unadjusted' in return_types_mod
-    #    compute_chi2 = 'chi2' in return_types_mod
-    #    compute_phi = 'phi' in return_types_mod
-    #    compute_cramers = 'cramers_v' in return_types_mod
-    #    pvalue_mat, chi2_mat, phi_mat, cramers_mat = libnapy_numba.chi2_numba(data, np.array(categories_per_var), nan_value,
-    #                                                        compute_pvalues, compute_chi2, compute_phi,
-    #                                                        compute_cramers, threads)
-    #    result_dict = dict()
-    #    result_dict["p_unadjusted"] = pvalue_mat
-    #    result_dict["chi2"] = chi2_mat
-    #    result_dict["phi"] = phi_mat
-    #    result_dict["cramers_v"] = cramers_mat
+    if not use_numba:
+        # Set number of desired threads for computation.
+        set_num_threads(threads)
+        # Convert into wrapper object.
+        data_mat = DataMatrix(data)
+        result_dict = chi_squared_with_nans(data_mat, categories_per_var, nan_value, return_types_mod)
+    else:
+        nan_value = int(nan_value)
+        compute_pvalues = 'p_unadjusted' in return_types_mod
+        compute_chi2 = 'chi2' in return_types_mod
+        compute_phi = 'phi' in return_types_mod
+        compute_cramers = 'cramers_v' in return_types_mod
+        pvalue_mat, chi2_mat, phi_mat, cramers_mat = chi2_numba(data, np.array(categories_per_var), nan_value,
+                                                            compute_pvalues, compute_chi2, compute_phi,
+                                                            compute_cramers, threads)
+        result_dict = dict()
+        result_dict["p_unadjusted"] = pvalue_mat
+        result_dict["chi2"] = chi2_mat
+        result_dict["phi"] = phi_mat
+        result_dict["cramers_v"] = cramers_mat
     
     # Clip values to 0 and 1
     result_dict["p_unadjusted"] =  np.clip(result_dict["p_unadjusted"], a_min=0.0, a_max=1.0)
@@ -492,24 +494,24 @@ def anova(cat_data : np.array, cont_data : np.array, nan_value : float = -999, a
     else:
         return_types_mod = set(return_types)
 
-    #if not use_numba:
-    # Set number of desired threads for computation.
-    set_num_threads(threads)
-    # Convert into wrapper object.
-    cat_data_mat = DataMatrix(cat_data)
-    cont_data_mat = DataMatrix(cont_data)
-    result_dict = anova_with_nans(cat_data_mat, cont_data_mat, categories_per_var, nan_value, return_types_mod)
-    #else:
-    #    nan_value = int(nan_value)
-    #    compute_pvalues = 'p_unadjusted' in return_types_mod
-    #    compute_f = 'F' in return_types_mod
-    #    compute_np2 = 'np2' in return_types_mod
-    #    pvalue_mat, f_mat, np2_mat = libnapy_numba.anova_numba(cat_data, cont_data, np.array(categories_per_var), nan_value,
-    #                                                        compute_pvalues, compute_f, compute_np2, threads)
-    #    result_dict = dict()
-    #    result_dict["p_unadjusted"] = pvalue_mat
-    #    result_dict["F"] = f_mat
-    #    result_dict["np2"] = np2_mat
+    if not use_numba:
+        # Set number of desired threads for computation.
+        set_num_threads(threads)
+        # Convert into wrapper object.
+        cat_data_mat = DataMatrix(cat_data)
+        cont_data_mat = DataMatrix(cont_data)
+        result_dict = anova_with_nans(cat_data_mat, cont_data_mat, categories_per_var, nan_value, return_types_mod)
+    else:
+        nan_value = int(nan_value)
+        compute_pvalues = 'p_unadjusted' in return_types_mod
+        compute_f = 'F' in return_types_mod
+        compute_np2 = 'np2' in return_types_mod
+        pvalue_mat, f_mat, np2_mat = anova_numba(cat_data, cont_data, np.array(categories_per_var), nan_value,
+                                                            compute_pvalues, compute_f, compute_np2, threads)
+        result_dict = dict()
+        result_dict["p_unadjusted"] = pvalue_mat
+        result_dict["F"] = f_mat
+        result_dict["np2"] = np2_mat
         
     # Clip values to 0 and 1
     result_dict["p_unadjusted"] =  np.clip(result_dict["p_unadjusted"], a_min=0.0, a_max=1.0)
@@ -607,25 +609,25 @@ def kruskal_wallis(cat_data : np.array, cont_data : np.array, nan_value : float 
     else:
         return_types_mod = set(return_types)
 
-    #if not use_numba:
-    # Convert into wrapper object.
-    cat_data_mat = DataMatrix(cat_data)
-    cont_data_mat = DataMatrix(cont_data)
-    # Set number of desired threads for computation.
-    set_num_threads(threads)
-    # Run tests.
-    result_dict = kruskal_wallis_with_nans(cat_data_mat, cont_data_mat, categories_per_var, nan_value, return_types_mod)
-    #else:
-    #    nan_value = int(nan_value)
-    #    compute_pvalues = 'p_unadjusted' in return_types_mod
-    #    compute_h = 'H' in return_types_mod
-    #    compute_eta2 = 'eta2' in return_types_mod
-    #    pvalue_mat, h_mat, eta2_mat = libnapy_numba.kruskal_wallis_numba(cat_data, cont_data, nan_value, np.array(categories_per_var),
-    #                                                        threads, compute_pvalues, compute_h, compute_eta2)
-    #    result_dict = dict()
-    #    result_dict["p_unadjusted"] = pvalue_mat
-    #    result_dict["H"] = h_mat
-    #    result_dict["eta2"] = eta2_mat
+    if not use_numba:
+        # Convert into wrapper object.
+        cat_data_mat = DataMatrix(cat_data)
+        cont_data_mat = DataMatrix(cont_data)
+        # Set number of desired threads for computation.
+        set_num_threads(threads)
+        # Run tests.
+        result_dict = kruskal_wallis_with_nans(cat_data_mat, cont_data_mat, categories_per_var, nan_value, return_types_mod)
+    else:
+        nan_value = int(nan_value)
+        compute_pvalues = 'p_unadjusted' in return_types_mod
+        compute_h = 'H' in return_types_mod
+        compute_eta2 = 'eta2' in return_types_mod
+        pvalue_mat, h_mat, eta2_mat = kruskal_wallis_numba(cat_data, cont_data, nan_value, np.array(categories_per_var),
+                                                            threads, compute_pvalues, compute_h, compute_eta2)
+        result_dict = dict()
+        result_dict["p_unadjusted"] = pvalue_mat
+        result_dict["H"] = h_mat
+        result_dict["eta2"] = eta2_mat
         
     # Clip values to 0 and 1
     result_dict["p_unadjusted"] =  np.clip(result_dict["p_unadjusted"], a_min=0.0, a_max=1.0)
@@ -728,25 +730,25 @@ def ttest(bin_data : np.array, cont_data : np.array, nan_value : float = -999, a
     else:
         return_types_mod = set(return_types)
 
-    #if not use_numba:
-    # Set number of desired threads for computation.
-    set_num_threads(threads)
-    # Convert into wrapper object.
-    bin_data_mat = DataMatrix(bin_data)
-    cont_data_mat = DataMatrix(cont_data)
-    # Run t-test.
-    result_dict = t_test_with_nans(bin_data_mat, cont_data_mat, nan_value, return_types_mod, use_welch)
-    #else:
-    #    nan_value = int(nan_value)
-    #    compute_pvalues = 'p_unadjusted' in return_types_mod
-    #    compute_t = 't' in return_types_mod
-    #    compute_cohens = 'cohens_d' in return_types_mod
-    #    pvalue_mat, t_mat, cohens_mat = libnapy_numba.ttest_numba(bin_data, cont_data, nan_value, compute_pvalues,
-    #                                                            compute_t, compute_cohens, use_welch, threads)
-    #    result_dict = dict()
-    #    result_dict["p_unadjusted"] = pvalue_mat
-    #    result_dict["t"] = t_mat
-    #    result_dict["cohens_d"] = cohens_mat
+    if not use_numba:
+        # Set number of desired threads for computation.
+        set_num_threads(threads)
+        # Convert into wrapper object.
+        bin_data_mat = DataMatrix(bin_data)
+        cont_data_mat = DataMatrix(cont_data)
+        # Run t-test.
+        result_dict = t_test_with_nans(bin_data_mat, cont_data_mat, nan_value, return_types_mod, use_welch)
+    else:
+        nan_value = int(nan_value)
+        compute_pvalues = 'p_unadjusted' in return_types_mod
+        compute_t = 't' in return_types_mod
+        compute_cohens = 'cohens_d' in return_types_mod
+        pvalue_mat, t_mat, cohens_mat = ttest_numba(bin_data, cont_data, nan_value, compute_pvalues,
+                                                                compute_t, compute_cohens, use_welch, threads)
+        result_dict = dict()
+        result_dict["p_unadjusted"] = pvalue_mat
+        result_dict["t"] = t_mat
+        result_dict["cohens_d"] = cohens_mat
     
     # Clip values to 0 and 1
     result_dict["p_unadjusted"] =  np.clip(result_dict["p_unadjusted"], a_min=0.0, a_max=1.0)
@@ -855,28 +857,28 @@ def mwu(bin_data: np.array, cont_data: np.array, nan_value: float = -999, axis: 
         return_types_mod = set(return_types)
 
     # Set number of desired threads for computation.
-    #if not use_numba:
-    # Convert into wrapper object.
-    bin_data_mat = DataMatrix(bin_data)
-    cont_data_mat = DataMatrix(cont_data)
-    set_num_threads(threads)
-    result_dict = mwu_with_nans(bin_data_mat, cont_data_mat, nan_value, return_types_mod, mode)
-    #else:
-    #    if mode == "auto":
-    #        mode_int = 0
-    #    elif mode == "exact":
-    #        mode_int = 1
-    #    else:
-    #        mode_int = 2
-    #    compute_pvalues = 'p_unadjusted' in return_types_mod
-    #    compute_u = 'U' in return_types_mod
-    #    compute_r = 'r' in return_types_mod
-    #    pvalue_mat, u_mat, r_mat = libnapy_numba.mann_whitney_numba(bin_data, cont_data, nan_value, compute_pvalues,
-    #                                                                 compute_u, compute_r, threads, mode_int)
-    #    result_dict = dict()
-    #    result_dict["p_unadjusted"] = pvalue_mat
-    #    result_dict["U"] = u_mat
-    #    result_dict["r"] = r_mat
+    if not use_numba:
+        # Convert into wrapper object.
+        bin_data_mat = DataMatrix(bin_data)
+        cont_data_mat = DataMatrix(cont_data)
+        set_num_threads(threads)
+        result_dict = mwu_with_nans(bin_data_mat, cont_data_mat, nan_value, return_types_mod, mode)
+    else:
+        if mode == "auto":
+            mode_int = 0
+        elif mode == "exact":
+            mode_int = 1
+        else:
+            mode_int = 2
+        compute_pvalues = 'p_unadjusted' in return_types_mod
+        compute_u = 'U' in return_types_mod
+        compute_r = 'r' in return_types_mod
+        pvalue_mat, u_mat, r_mat = mann_whitney_numba(bin_data, cont_data, nan_value, compute_pvalues,
+                                                                     compute_u, compute_r, threads, mode_int)
+        result_dict = dict()
+        result_dict["p_unadjusted"] = pvalue_mat
+        result_dict["U"] = u_mat
+        result_dict["r"] = r_mat
     
     # Clip values to 0 and 1
     result_dict["p_unadjusted"] =  np.clip(result_dict["p_unadjusted"], a_min=0.0, a_max=1.0)

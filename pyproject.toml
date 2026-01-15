@@ -16,7 +16,14 @@ requires-python = ">=3.8, <=3.12"
 license = { text = "GPL-3.0-only" }
 license-files = ["LICENSE"]
 authors = [{name = "Fabian Woller"}]
-dependencies = ["numpy", "torch", "scipy", "pandas"]
+dependencies = ["numpy", 
+                "torch", 
+                "scipy", 
+                "pandas",
+                "numba==0.60.0",
+                "numba-scipy==0.4.0",
+                "scipy==1.11.0"
+                ]
 
 [tool.scikit-build]
 build-dir = "build/{wheel_tag}"
