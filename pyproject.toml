@@ -9,14 +9,13 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "napypi"
-version = "0.1.0"
+version = "0.2.0"
 description = "Fast numerical algorithms with C++ backend"
 readme = "README.md"
 requires-python = ">=3.8"
-license = {text = "MIT"}
-authors = [{name = "Your Name"}]
-
-dependencies = ["numpy"]
+license = {text = "GNU GPL v3.0"}
+authors = [{name = "Fabian Woller"}]
+dependencies = ["numpy", "torch", "scipy", "pandas"]
 
 [tool.scikit-build]
 build-dir = "build/{wheel_tag}"

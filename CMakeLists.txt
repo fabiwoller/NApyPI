@@ -12,7 +12,14 @@ find_package(OpenMP)
 # -------------------------
 pybind11_add_module(_core
     src/napy.cpp
-    src/algo.cpp
+    src/anova.cpp
+    src/chi2.cpp
+    src/kruskal.cpp
+    src/matrix.cpp
+    src/mwu.cpp
+    src/pearson.cpp
+    src/spearman.cpp
+    src/ttest.cpp
 )
 
 target_compile_features(_core PRIVATE cxx_std_17)
