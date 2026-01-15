@@ -5,7 +5,7 @@ project(napypi LANGUAGES CXX)
 # Dependencies
 # -------------------------
 find_package(pybind11 CONFIG REQUIRED)
-find_package(OpenMP)
+find_package(OpenMP REQUIRED)
 
 # -------------------------
 # Python extension
@@ -42,6 +42,8 @@ target_include_directories(_core PRIVATE
 # OpenMP
 if(OpenMP_CXX_FOUND)
     target_link_libraries(_core PRIVATE OpenMP::OpenMP_CXX)
+else()
+    message(FATAL_ERROR "OpenMP required but not found!")
 endif()
 
 # Install location inside Python package
