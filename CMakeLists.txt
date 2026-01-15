@@ -36,7 +36,7 @@ target_include_directories(_core PRIVATE
 
 # Boost (vendored, header-only)
 target_include_directories(_core PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/boost
 )
 
 # OpenMP
