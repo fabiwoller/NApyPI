@@ -9,10 +9,10 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "napypi"
-version = "0.4.4"
+version = "0.4.5"
 description = "Efficient statistics in Python for large-scale heterogeneous data with enhanced support for missing data"
 readme = "README.md"
-requires-python = ">=3.10, <=3.12"
+requires-python = ">=3.9, <3.13"
 license = { text = "GPL-3.0-only" }
 license-files = ["LICENSE"]
 authors = [{name = "Fabian Woller"}]
@@ -27,3 +27,4 @@ dependencies = ["numpy",
 [tool.scikit-build]
 build-dir = "build/{wheel_tag}"
 wheel.packages = ["python/napypi"]
+cmake.args = ["-DCMAKE_SIZEOF_VOID_P=8"]
