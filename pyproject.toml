@@ -9,7 +9,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "napypi"
-version = "0.4.13"
+version = "0.4.14"
 description = "Efficient statistics in Python for large-scale heterogeneous data with enhanced support for missing data"
 readme = "README.md"
 requires-python = ">=3.9, <3.12"
