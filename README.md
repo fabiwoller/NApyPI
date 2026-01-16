@@ -1,20 +1,20 @@
 # NApyPI: Efficient statistics in Python for large-scale heterogeneous data with enhanced support for missing data
 
-A python packaged version of our software NApy. This offers a fast python tool providing statistical tests and effect sizes for a more comprehensive and informative analysis of mixed type data in the presence of missingness. Written both in C++ and numba and parallelized with OpenMP.
+A python packaged version of our software NApy. NApy offers a fast python tool providing statistical tests and effect sizes for a more comprehensive and informative analysis of mixed type data in the presence of missingness. Written both in C++ and numba and parallelized with OpenMP.
 
+## Installation
 
-
-# Installation
-
-
+NApy is available as a Python package on the most common Windows, MacOS, and Linux architectures (64-bit only). It is easily installable via:
 
 ```bash
 pip install napypi
 ```
 
+## Documentation
 
+For a detailed overview of NApy's functionality and parameter descriptions, we refer to NApy's [main repository](https://github.com/DyHealthNet/NApy).
 
-# Citation
+## Citation
 
 In case you find our tool useful, please cite our corresponding [manuscript](https://doi.org/10.1093/gigascience/giaf140):
 
