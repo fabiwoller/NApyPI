@@ -1,4 +1,9 @@
 # NApyPI: Efficient statistics in Python for large-scale heterogeneous data with enhanced support for missing data
+![Tests](https://github.com/fabiwoller/NApyPI/actions/workflows/ci.yml/badge.svg)
+![Python](https://img.shields.io/badge/python-3.9%20–%203.11-orange)
+![PyPI](https://img.shields.io/pypi/v/napypi)
+[![DOI](https://img.shields.io/badge/DOI-10.1093%2Fgigascience%2Fgiaf140-red)](https://doi.org/10.1093/gigascience/giaf140)
+
 
 A python packaged version of our software NApy. NApy offers a fast python tool providing statistical tests and effect sizes for a more comprehensive and informative analysis of mixed type data in the presence of missingness. Written both in C++ and numba and parallelized with OpenMP.
 
