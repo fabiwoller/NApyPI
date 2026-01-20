@@ -21,23 +21,25 @@ jobs:
         with:
           python-version: "3.11"
 
-      # ---- R setup ----
-      - name: Set up R
-        uses: r-lib/actions/setup-r@v2
-        with:
-          r-version: "4.3"
-
       # ---- System dependencies ----
       - name: Install system libraries
         run: |
           sudo apt-get update
           sudo apt-get install -y libcurl4-openssl-dev libssl-dev libxml2-dev
 
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: "4.3"
+
+      - name: Set R library path
+        run: |
+          echo "LD_LIBRARY_PATH=/opt/R/4.3.3/lib/R/lib:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
+
       # ---- Python dependencies ----
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install numpy scipy pandas
           pip install rpy2
           pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
           pip install .
