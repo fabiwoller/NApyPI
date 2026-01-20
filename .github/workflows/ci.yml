@@ -35,6 +35,14 @@ jobs:
       - name: Set R library path
         run: |
           echo "LD_LIBRARY_PATH=/opt/R/4.3.3/lib/R/lib:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
+      
+      - name: Install required R packages
+        run: |
+          Rscript -e "install.packages(
+            c('lsr', 'rstatix', 'effectsize', 'Hmisc'),
+            repos = 'https://cloud.r-project.org'
+          )"
+
 
       # ---- Python dependencies ----
       - name: Install Python dependencies
