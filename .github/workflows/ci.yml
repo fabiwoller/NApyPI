@@ -42,9 +42,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install \
             numpy==1.26.* \
-            scipy==1.11.* \
-            numba==0.60.* \
-            numba-scipy==0.4.* \
+            scipy==1.11.0 \
+            numba==0.60.0 \
+            numba-scipy==0.4.0 \
             pandas
           pip install rpy2
           pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
