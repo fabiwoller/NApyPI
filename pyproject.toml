@@ -19,10 +19,10 @@ authors = [{name = "Fabian Woller"}]
 dependencies = [
                 "torch", 
                 "pandas",
-                "numba",
-                "numba-scipy",
-                "numpy>=1.26,<2.0",
-                "scipy>=1.11.1,<1.12"
+                "numba==0.60.0",
+                "numba-scipy==0.4.0",
+                "numpy==1.26.*",
+                "scipy==1.11.0"
                 ]
 
 [tool.scikit-build]
