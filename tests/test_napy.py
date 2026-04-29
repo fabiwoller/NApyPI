@@ -697,16 +697,28 @@ class TestKruskalWallis(unittest.TestCase):
         self.assertListEqual(s.tolist(), s_t.tolist())
         self.assertListEqual(p.tolist(), p_t.tolist())
     
-    def test_empty_category(self):
+    def test_empty_category_without_ignore(self):
         """Test empty category case due to NA removal.
         """
-        cat_data = np.array([[0,1,1,1,0]])
+        cat_data = np.array([[1,0,1,1,2]])
         cont_data = np.array([[-99,3,4,2,-99]])
-        out_dict = napy.kruskal_wallis(cat_data, cont_data, nan_value=-99)
+        out_dict = napy.kruskal_wallis(cat_data, cont_data, nan_value=-99, ignore_empty_groups=False)
         s = out_dict['H']
         p = out_dict['p_unadjusted']
         self.assertTrue(np.isnan(s[0]))
         self.assertTrue(np.isnan(p[0]))
+        
+    def test_empty_category_with_ignore(self):
+        """Test empty category case due to NA removal.
+        """
+        cat_data = np.array([[1,0,1,1,2]])
+        cont_data = np.array([[-99,3,4,2,-99]])
+        out_dict = napy.kruskal_wallis(cat_data, cont_data, nan_value=-99, ignore_empty_groups=True)
+        s_napy = out_dict['H']
+        p_napy = out_dict['p_unadjusted']
+        s_sc, p_sc = sc.stats.kruskal([3], [4,2])
+        self.assertAlmostEqual(s_napy[0], s_sc)
+        self.assertAlmostEqual(p_napy[0], p_sc)
         
     def test_one_category(self):
         """Test case when only one category input category is given.

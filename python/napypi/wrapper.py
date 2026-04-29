@@ -549,7 +549,8 @@ def anova(cat_data : np.array, cont_data : np.array, nan_value : float = -999, a
 
 
 def kruskal_wallis(cat_data : np.array, cont_data : np.array, nan_value : float = -999, axis : int = 0,
-          threads : int = 1, check_data : bool = False, return_types : list[str] = [], use_numba : bool = False):
+          threads : int = 1, check_data : bool = False, return_types : list[str] = [], use_numba : bool = False,
+          ignore_empty_groups : bool = True):
     """Runs Kruskal-Wallis tests between all pairwise combinations of categorical and continuous input data variables
     and returns pairwise statistic values as well as pairwise P-values.
 
@@ -564,6 +565,9 @@ def kruskal_wallis(cat_data : np.array, cont_data : np.array, nan_value : float 
         'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek', 'H', 'eta2'.
         If an empty list is passed, every possible data matrix is returned.
         use_numba (bool, optional): Whether or not to use numba-based implementation.
+        ignore_empty_groups (bool, optional): Whether to ignore groups that become empty due to pairwise removal. 
+            If set to False, the output of P-value and effect size will be set to NA if at least one
+            category is empty. Defaults to True.
     """
     input_cat = cat_data
     input_cont = cont_data
@@ -616,14 +620,15 @@ def kruskal_wallis(cat_data : np.array, cont_data : np.array, nan_value : float 
         # Set number of desired threads for computation.
         set_num_threads(threads)
         # Run tests.
-        result_dict = kruskal_wallis_with_nans(cat_data_mat, cont_data_mat, categories_per_var, nan_value, return_types_mod)
+        result_dict = kruskal_wallis_with_nans(cat_data_mat, cont_data_mat, categories_per_var, nan_value, return_types_mod, ignore_empty_groups)
     else:
         nan_value = int(nan_value)
         compute_pvalues = 'p_unadjusted' in return_types_mod
         compute_h = 'H' in return_types_mod
         compute_eta2 = 'eta2' in return_types_mod
         pvalue_mat, h_mat, eta2_mat = kruskal_wallis_numba(cat_data, cont_data, nan_value, np.array(categories_per_var),
-                                                            threads, compute_pvalues, compute_h, compute_eta2)
+                                                            threads, compute_pvalues, compute_h, compute_eta2,
+                                                            ignore_empty_groups)
         result_dict = dict()
         result_dict["p_unadjusted"] = pvalue_mat
         result_dict["H"] = h_mat
