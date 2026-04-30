@@ -480,16 +480,28 @@ class TestANOVA(unittest.TestCase):
         self.assertTrue(np.isnan(s[0]))
         self.assertTrue(np.isnan(p[0]))
 
-    def test_category_nan_removal(self):
+    def test_empty_category_without_ignore(self):
         """Test case for non-existing category after nan removal.
         """
-        cat_data = np.array([[0,-99,1,0,-99,1]])
+        cat_data = np.array([[0,2,1,0,2,1]])
         cont_data = np.array([[-99, 4, 4,-99,2,3]])
-        out_dict = napy.anova(cat_data, cont_data, nan_value=-99)
+        out_dict = napy.anova(cat_data, cont_data, nan_value=-99, ignore_empty_groups=False)
         s = out_dict['F']
         p = out_dict['p_unadjusted']
         self.assertTrue(np.isnan(s[0]))
         self.assertTrue(np.isnan(p[0]))
+        
+    def test_empty_category_with_ignore(self):
+        """Test case for non-existing category after nan removal.
+        """
+        cat_data = np.array([[0,2,1,0,2,1]])
+        cont_data = np.array([[-99, 4, 4,-99,2,3]])
+        out_dict = napy.anova(cat_data, cont_data, nan_value=-99, ignore_empty_groups=True)
+        s_napy = out_dict['F']
+        p_napy = out_dict['p_unadjusted']
+        s_scipy, pval_scipy = sc.stats.f_oneway([4,3], [4,2])
+        self.assertAlmostEqual(s_napy[0,0], s_scipy)
+        self.assertAlmostEqual(p_napy[0,0], pval_scipy)
         
     def test_all_nan_removal(self):
         """Test case if no elements exist anymore after NA removal.
