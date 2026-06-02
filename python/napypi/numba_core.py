@@ -841,7 +841,7 @@ def mann_whitney_numba(bin_data : np.ndarray, cont_data : np.ndarray,  nan_value
             if sigma == 0.0:
                 r_effect = np.nan
             else:
-                r_effect = z_value / np.sqrt(n)
+                r_effect = np.abs(z_value) / np.sqrt(n)
 
             # Compute P-value based on asymptotic mode if desired and possible.
             if mode == 2 or (mode == 0 and not is_exact_possible):
