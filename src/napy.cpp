@@ -62,7 +62,8 @@ PYBIND11_MODULE(_core, m){
     m.def("kruskal_wallis_with_nans", &statistics::kruskal_wallis_with_nans, "Compute pairwise Kruskal-Wallis tests for all combinations of categorical and continuous data.");
     m.def("t_test_with_nans", &statistics::ttest, "Compute pairwise t-tests for all combations for binary and continuous data.");
     m.def("mwu_with_nans", &statistics::mwu_with_nans, "Compute pairwise MWU tests for all combinations of binary and continuous data.");
-
+    m.def("partial_correlation_with_nans", &statistics::partial_correlation_with_nans, "Compute pairwise partial correlation for all rows in DataMatrix.");
+   
     //********* Add OMP functionality. *********//
 	m.def("get_max_threads", &omp_get_max_threads, "Returns max number of threads");
 	m.def("get_num_threads", &omp_get_num_threads, "Returns number active threads");

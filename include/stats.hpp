@@ -53,4 +53,12 @@ namespace statistics
     std::map<std::string, DataMatrix> mwu_with_nans(const DataMatrix& bin_data, 
         const DataMatrix& cont_data, double na_value, const std::set<std::string>& return_types, 
         const std::string& mode);
+
+    // NAN-aware partial correlation.
+    std::pair<DataMatrix, DataMatrix> partial_correlation_with_nans(
+        const DataMatrix& data, 
+        const std::vector<int>& control_rows,
+        double na_value,
+        const std::string& method);
+
 }

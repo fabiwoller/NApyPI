@@ -20,6 +20,7 @@ pybind11_add_module(_core
     src/pearson.cpp
     src/spearman.cpp
     src/ttest.cpp
+    src/partialcorr.cpp
 )
 
 target_compile_features(_core PRIVATE cxx_std_17)
@@ -31,7 +32,7 @@ target_include_directories(_core PRIVATE
 
 # Eigen (vendored, header-only)
 target_include_directories(_core PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/eigen
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/eigen3
 )
 
 # Boost (vendored, header-only)

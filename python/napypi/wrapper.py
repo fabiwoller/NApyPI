@@ -1,4 +1,4 @@
-from ._core import set_num_threads, pearson_with_nans, spearman_with_nans, chi_squared_with_nans
+from ._core import set_num_threads, pearson_with_nans, spearman_with_nans, chi_squared_with_nans, partial_correlation_with_nans
 from ._core import anova_with_nans, kruskal_wallis_with_nans, t_test_with_nans, mwu_with_nans, DataMatrix
 from .numba_core import pearson_numba, spearman_numba, chi2_numba, kruskal_wallis_numba
 from .numba_core import ttest_numba, mann_whitney_numba, anova_numba
@@ -921,5 +921,96 @@ def mwu(bin_data: np.array, cont_data: np.array, nan_value: float = -999, axis: 
         output_dic["p_unadjusted"] = pvalue_mat
 
     output_dic = transform_output(output_dic, axis, input_bin, input_cont)
+
+    return output_dic
+
+def partial_correlation(data : np.array, covar_indices: list[int] = [], nan_value : float = -999, axis : int = 0,
+                        use_numba : bool = False, threads : int = 1, return_types : list[str] = [], method="pearson"):
+    """Runs partial correlation tests on all pairwise combinations of variables in the input data matrix,
+    controlling for the variables in covar.
+    Returns pairwise correlation coefficients and P-values.
+
+    Args:
+        data (np.array): Data matrix storing variables.
+        covar (list[int], optional): List of variable indices to be used as covariates in the partial correlation.
+            If empty, no variables in the data matrix are used as covariates. Defaults to [].
+        nan_value (float, optional): Value indicating missing value. Defaults to -999.
+        axis (int, optional): Whether to consider rows as variables (axis=0) or columns (axis=1). Defaults to 0.
+        threads (int, optional): Number of threads to be used in parallel computation. Defaults to 1.
+        use_numba (bool, optional): Whether or not to use numba-based python implementation. Defaults to False.
+        return_types (list[str], optional): List of result data matrices to return. Can be any subset of
+            'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek', 'correlation'.
+            If an empty list is passed, every possible data matrix is returned.
+        method (str, optional): Which correlation method to use. Can be chosen from "pearson" and "spearman". 
+            Defaults to "pearson".
+    """
+    # Check validity of input data.
+    _check_input_data_single_matrix(data, threads, axis)
+    # Check input of return types list.
+    if not set(return_types).issubset({'correlation', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek'}):
+        raise ValueError(f"Unknown return type in input list: {return_types}.")
+
+    if len(return_types) == 0:
+        return_types = ['correlation', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek']
+        
+    if method not in ['pearson', 'spearman']:
+        raise ValueError(f"Unknown correlation method: {method}. Supported methods are 'pearson' and 'spearman'.")
+    
+     # Transpose data if necessary.
+    if axis==1:
+        data = data.T.copy()
+        
+    # Ensure float datatype on matrix.
+    data = np.array(data, copy=False, dtype=np.float64)
+    nan_value = float(nan_value)
+    
+    # Validate covar_indices
+    if covar_indices:  # Only check if not empty
+        max_index = data.shape[0] - 1
+        invalid_indices = [idx for idx in covar_indices if idx < 0 or idx > max_index]
+        if invalid_indices:
+            raise ValueError(f"Invalid covariate indices {invalid_indices}. "
+                            f"Valid range is 0 to {max_index} for data with {data.shape[0]} rows.")
+        
+        # Check for duplicates
+        if len(set(covar_indices)) != len(covar_indices):
+            raise ValueError(f"Duplicate indices found in covar_indices: {covar_indices}")
+
+        
+    # Use CPP-based correlation computation with OpenMP.
+    if not use_numba:
+        # Set number of desired threads for computation.
+        set_num_threads(threads)
+        data_mat = DataMatrix(data)
+        corr_mat, pvalue_mat = partial_correlation_with_nans(data_mat, covar_indices, nan_value, method)
+        corr_mat = np.array(corr_mat, copy=False)
+        pvalue_mat = np.array(pvalue_mat, copy=False)
+    
+    else: # Use numba-based python implementation.
+        pass
+        # TODO: Implement partial correlation in numba.
+    
+    # Clip values to range 0 and 1 (rounding errors)
+    pvalue_mat = np.clip(pvalue_mat, a_min=0.0, a_max=1.0)
+    
+    output_dic = dict()
+    # Check which effect sizes and Pvalues to return.
+    if 'correlation' in return_types:
+        output_dic["correlation"] = corr_mat
+    
+    if 'p_bonferroni' in return_types:
+        pvalue_mat_bonf = _adjust_pvalues_bonferroni(pvalue_mat.copy(), ignore_diag=True)
+        output_dic["p_bonferroni"] = pvalue_mat_bonf
+
+    if 'p_benjamini_hb' in return_types:
+        pvalue_mat_benj_hb = _adjust_pvalues_fdr_control(pvalue_mat.copy(), 'bh', ignore_diag=True)
+        output_dic['p_benjamini_hb'] = pvalue_mat_benj_hb
+
+    if 'p_benjamini_yek' in return_types:
+        pvalue_mat_benj_yek = _adjust_pvalues_fdr_control(pvalue_mat.copy(), 'by', ignore_diag=True)
+        output_dic['p_benjamini_yek'] = pvalue_mat_benj_yek
+
+    if 'p_unadjusted' in return_types:
+        output_dic["p_unadjusted"] = pvalue_mat
 
     return output_dic
