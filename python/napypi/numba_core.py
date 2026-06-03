@@ -809,13 +809,12 @@ def mann_whitney_numba(bin_data : np.ndarray, cont_data : np.ndarray,  nan_value
                     subtract_right = subtract_right + subtract_extra
 
             # Compute U statistic value by aggregating per-category rank sums.
-            larger_index = 1
-            if group_rank_sums[0]>=group_rank_sums[1]:
-                larger_index = 0
-            n1 = group_sizes[larger_index]
-            n2 = group_sizes[1 - larger_index]
-            R1 = group_rank_sums[larger_index]
-            U = n1*n2 + 0.5*n1*(n1+1) - R1
+            n1 = group_sizes[0]
+            n2 = group_sizes[1]
+            R1 = group_rank_sums[0]
+            U1 = n1*n2 + 0.5*n1*(n1+1) - R1
+            U2 = n1 * n2 - U1
+            U = np.min(np.array([U1, U2]))
 
             # Check for empty category.
             if n1 == 0 or n2 == 0:
@@ -835,13 +834,13 @@ def mann_whitney_numba(bin_data : np.ndarray, cont_data : np.ndarray,  nan_value
             mu = 0.5*n1*n2
             n = n1+n2
             sigma = np.sqrt((1.0/12.0)*n1*n2*((n+1) - tie_correction/(n*(n-1))))
-            z_value = (U - mu) / sigma
+            z_value = (U1 - mu) / sigma
 
             # Compute Pearson's r effect size if well-defined.
             if sigma == 0.0:
                 r_effect = np.nan
             else:
-                r_effect = np.abs(z_value) / np.sqrt(n)
+                r_effect = z_value / np.sqrt(n)
 
             # Compute P-value based on asymptotic mode if desired and possible.
             if mode == 2 or (mode == 0 and not is_exact_possible):
@@ -850,7 +849,7 @@ def mann_whitney_numba(bin_data : np.ndarray, cont_data : np.ndarray,  nan_value
                 if compute_pvalues:
                     pvalue_matrix[bin_row, cont_row] = pvalue
                 if compute_u:
-                    u_matrix[bin_row, cont_row] = U
+                    u_matrix[bin_row, cont_row] = U1
                 if compute_r:
                     r_matrix[bin_row, cont_row] = r_effect
             elif mode == 1 or (mode == 0 and is_exact_possible):
@@ -860,7 +859,7 @@ def mann_whitney_numba(bin_data : np.ndarray, cont_data : np.ndarray,  nan_value
                 if compute_pvalues:
                     pvalue_matrix[bin_row, cont_row] = pvalue
                 if compute_u:
-                    u_matrix[bin_row, cont_row] = rounded_u
+                    u_matrix[bin_row, cont_row] = U1
                 if compute_r:
                     r_matrix[bin_row, cont_row] = r_effect
 

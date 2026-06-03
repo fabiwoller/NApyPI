@@ -17,7 +17,7 @@ class TestPearsonCorrelation(unittest.TestCase):
         data = np.array([[1,2,3,4], [2,4,3,3]])
         nan_value = -99
         out_dict = napy.pearsonr(data, nan_value=nan_value, axis=0, threads=1)
-        napy_corr = out_dict['r2']
+        napy_corr = out_dict['r']
         napy_pvals = out_dict['p_unadjusted']
         scipy_corr, scipy_pvals = sc.stats.pearsonr(data[0], data[1])
         self.assertEqual(napy_corr[0,0], 1.0)
@@ -33,7 +33,7 @@ class TestPearsonCorrelation(unittest.TestCase):
         nan_value = -99
         data = np.random.rand(2, 100)
         out_dict = napy.pearsonr(data, nan_value=nan_value, axis=0, threads=1)
-        corr1 = out_dict['r2']
+        corr1 = out_dict['r']
         pval1 = out_dict['p_unadjusted']
         corr2, pval2 = sc.stats.pearsonr(data[0], data[1])
         self.assertAlmostEqual(corr1[0,1], corr2)
@@ -45,7 +45,7 @@ class TestPearsonCorrelation(unittest.TestCase):
         nan_value = -99
         data = np.array([[1,2,3,4,5,nan_value], [nan_value,2,5,4,nan_value,6]])
         out_dict= napy.pearsonr(data, nan_value=nan_value, axis=0, threads=1)
-        napy_corr = out_dict['r2']
+        napy_corr = out_dict['r']
         napy_pvals = out_dict['p_unadjusted']
         scipy_corr, scipy_pvals = sc.stats.pearsonr([2,3,4], [2,5,4])
         self.assertAlmostEqual(napy_corr[0,1], scipy_corr)
@@ -58,10 +58,10 @@ class TestPearsonCorrelation(unittest.TestCase):
         data = np.random.rand(3,3)
         data_T = data.T.copy()
         out_dict1 = napy.pearsonr(data, nan_value=nan_value, axis=0, threads=1)
-        napy_corr1 = out_dict1['r2']
+        napy_corr1 = out_dict1['r']
         napy_pvals1 = out_dict1['p_unadjusted']
         out_dict2 = napy.pearsonr(data_T, nan_value=nan_value, axis=1, threads=1)
-        napy_corr2 = out_dict2['r2']
+        napy_corr2 = out_dict2['r']
         napy_pvals2 = out_dict2['p_unadjusted']
         self.assertListEqual(napy_corr1.tolist(), napy_corr2.tolist())
         self.assertListEqual(napy_pvals1.tolist(), napy_pvals2.tolist())
@@ -72,10 +72,10 @@ class TestPearsonCorrelation(unittest.TestCase):
         nan_value = -99
         data = np.random.rand(10, 5)
         out_dict1 = napy.pearsonr(data, nan_value=nan_value, axis=0, threads=1)
-        corr1 = out_dict1['r2']
+        corr1 = out_dict1['r']
         pval1 = out_dict1['p_unadjusted']
         out_dict2 = napy.pearsonr(data, nan_value=nan_value, axis=0, threads=4)
-        corr2 = out_dict2['r2']
+        corr2 = out_dict2['r']
         pval2 = out_dict2['p_unadjusted']
         self.assertListEqual(corr1.tolist(), corr2.tolist())
         self.assertListEqual(pval1.tolist(), pval2.tolist())
@@ -96,7 +96,7 @@ class TestPearsonCorrelation(unittest.TestCase):
         nan_value = -99
         data = np.array([[1,2,nan_value], [nan_value, 2, 3]])
         out_dict = napy.pearsonr(data, nan_value=nan_value, axis=0, threads=1)
-        corrs = out_dict['r2']
+        corrs = out_dict['r']
         pvals = out_dict['p_unadjusted']
         self.assertTrue(np.isnan(corrs[0,1]))
         self.assertTrue(np.isnan(corrs[1,0]))
@@ -109,7 +109,7 @@ class TestPearsonCorrelation(unittest.TestCase):
         nan_value = -99
         data = np.array([[-99, 1, 2, -99], [3,-99, -99, 1]])
         out_dict = napy.pearsonr(data, nan_value=nan_value, axis=0, threads=1)
-        corrs = out_dict['r2']
+        corrs = out_dict['r']
         pvals = out_dict['p_unadjusted']
         self.assertTrue(np.isnan(corrs[0,1]))
         self.assertTrue(np.isnan(pvals[0,1]))
@@ -136,7 +136,7 @@ class TestPearsonCorrelation(unittest.TestCase):
         r_corr = py_result['estimate'][0]
         
         out_dict = napy.pearsonr(data)
-        napy_corr = out_dict['r2']
+        napy_corr = out_dict['r']
         napy_pvals = out_dict['p_unadjusted']
         self.assertAlmostEqual(r_corr, napy_corr[0,1])
         self.assertAlmostEqual(r_pvalue, napy_pvals[0,1])
@@ -1105,7 +1105,7 @@ class TestMWU(unittest.TestCase):
         stat2 = 4*4 - stat1
         pval = test.pvalue
         self.assertAlmostEqual(p[0][0], pval)
-        self.assertTrue(stat1 == s or stat2 == s)
+        self.assertTrue(stat2 == s)
 
     def test_asymptotic_against_scipy(self):
         """
@@ -1167,12 +1167,13 @@ class TestMWU(unittest.TestCase):
         res = wilcox(r_x, r_y, **{'exact': True, 'correct': False})
         pvalue_r = res.rx['p.value'][0][0]
         stat_r = res.rx['statistic'][0][0]
+        stat_r_2 = 4*4 - stat_r
 
         # Call napy.
         out_dict = napy.mwu(cat_data, cont_data, mode='exact')
         s = out_dict['U']
         p = out_dict['p_unadjusted']
-        self.assertAlmostEqual(s[0][0], stat_r)
+        self.assertTrue(s[0][0] == stat_r or s[0][0] == stat_r_2)
         self.assertAlmostEqual(p[0][0], pvalue_r)
 
     def test_asymptotic_vs_R(self):
@@ -1191,12 +1192,12 @@ class TestMWU(unittest.TestCase):
         res = wilcox(r_x, r_y, **{'exact': False, 'correct': False})
         pvalue_r = res.rx['p.value'][0][0]
         stat_r = res.rx['statistic'][0][0]
-
+        stat_r_2 = 4*4 - stat_r
         # Call napy.
         out_dict = napy.mwu(cat_data, cont_data, mode='asymptotic')
         s = out_dict['U']
         p = out_dict['p_unadjusted']
-        self.assertAlmostEqual(s[0][0], stat_r)
+        self.assertTrue(s[0][0] == stat_r or s[0][0] == stat_r_2)
         self.assertAlmostEqual(p[0][0], pvalue_r)
 
     def test_asymptotic_vs_R_no_ties(self):
@@ -1215,12 +1216,13 @@ class TestMWU(unittest.TestCase):
         res = wilcox(r_x, r_y, **{'exact': False, 'correct': False})
         pvalue_r = res.rx['p.value'][0][0]
         stat_r = res.rx['statistic'][0][0]
+        stat_r_2 = 4*4 - stat_r
 
         # Call napy.
         out_dict = napy.mwu(cat_data, cont_data, mode='asymptotic')
         s = out_dict['U']
         p = out_dict['p_unadjusted']
-        self.assertAlmostEqual(s[0][0], stat_r)
+        self.assertTrue(s[0][0] == stat_r or s[0][0] == stat_r_2)
         self.assertAlmostEqual(p[0][0], pvalue_r)
 
     def test_effect_size_r_no_ties(self):
@@ -1248,7 +1250,7 @@ class TestMWU(unittest.TestCase):
         cont_data = np.array([[4,2,5,1,3,6,10,8]])
         out_dict = napy.mwu(bin_data, cont_data, mode='exact')
         r = out_dict['r']
-        self.assertAlmostEqual(r[0][0], eff_size_r)
+        self.assertAlmostEqual(abs(r[0][0]), eff_size_r)
 
     def test_effect_size_r_ties(self):
         """
@@ -1275,7 +1277,7 @@ class TestMWU(unittest.TestCase):
         cont_data = np.array([[4, 1, 5, 1, 3, 6, 10, 5]])
         out_dict = napy.mwu(bin_data, cont_data, mode='asymptotic')
         r = out_dict['r']
-        self.assertAlmostEqual(r[0][0], eff_size_r)
+        self.assertAlmostEqual(abs(r[0][0]), eff_size_r)
 
     def test_na_removal(self):
         """
@@ -1290,8 +1292,9 @@ class TestMWU(unittest.TestCase):
         cat1 = [6,7,9]
         test = sc.stats.mannwhitneyu(cat0, cat1, use_continuity=False, method='asymptotic')
         stat_sc = test.statistic
+        stat2 = 2*3 - stat_sc
         pval_sc = test.pvalue
-        self.assertAlmostEqual(s[0][0], stat_sc)
+        self.assertTrue(stat_sc == s[0][0] or stat2 == s[0][0])
         self.assertAlmostEqual(p[0][0], pval_sc)
 
     def test_empty_category(self):

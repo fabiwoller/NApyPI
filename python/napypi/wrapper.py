@@ -183,7 +183,7 @@ def pearsonr(data : np.array, nan_value : float = -999, axis : int = 0, threads 
         threads (int, optional): Number of threads to be used in parallel computation. Defaults to 1.
         use_numba (bool, optional): If set to True, use numba based python implementation instead of CPP version.
         return_types (list[str], optional): List of data matrices to return. Can be any subset of
-        'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek', and 'r2'. If an empty list is
+        'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek', and 'r'. If an empty list is
         passed, every possible data matrix is returned.
     """
     input_data = data
@@ -193,11 +193,11 @@ def pearsonr(data : np.array, nan_value : float = -999, axis : int = 0, threads 
     _check_input_data_single_matrix(data, threads, axis)
 
     # Check input of Pvalue adjustment method.
-    if not set(return_types).issubset({'r2', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek'}):
+    if not set(return_types).issubset({'r', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek'}):
         raise ValueError(f"Unknown return type in input list: {return_types}.")
 
     if len(return_types) == 0:
-        return_types = ['r2', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek']
+        return_types = ['r', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek']
 
     # Transpose data if necessary.
     if axis==1:
@@ -224,8 +224,8 @@ def pearsonr(data : np.array, nan_value : float = -999, axis : int = 0, threads 
 
     output_dic = dict()
     # Check which effect sizes and Pvalues to return.
-    if 'r2' in return_types:
-        output_dic["r2"] = corr_mat
+    if 'r' in return_types:
+        output_dic["r"] = corr_mat
 
     if 'p_bonferroni' in return_types:
         pvalue_mat_bonf = _adjust_pvalues_bonferroni(pvalue_mat.copy(), ignore_diag=True)
