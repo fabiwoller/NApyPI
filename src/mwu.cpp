@@ -1,10 +1,10 @@
 #include <stats.hpp>
 #include <boost/math/special_functions/beta.hpp>
 
-std::tuple<double, double, double> get_nans_mwu()
+std::tuple<double, double, double, double> get_nans_mwu()
 {
     return std::make_tuple(std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::quiet_NaN(),
-            std::numeric_limits<double>::quiet_NaN());
+            std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::quiet_NaN());
 }
 
 // Helper function for computing binomial coefficients.
@@ -67,7 +67,7 @@ double compute_exact_pvalue(int n, int m, int u)
     return pvalue;
 }
 
-std::tuple<double, double, double> pairwise_nan_mwu(const DataMatrix& bin_data, int iBin, 
+std::tuple<double, double, double, double> pairwise_nan_mwu(const DataMatrix& bin_data, int iBin, 
     const vec2d& rowRanks, double na_value, const std::string& mode)
 {
     // Compute number of elements per category and rank sums.
@@ -153,6 +153,16 @@ std::tuple<double, double, double> pairwise_nan_mwu(const DataMatrix& bin_data, 
     else
         r_effect = z_value / std::sqrt(n);
 
+    double rank_biserial;
+    if (n1 == 0 || n2 == 0)
+    {
+        rank_biserial = std::numeric_limits<double>::quiet_NaN();
+    }
+    else
+    {
+        rank_biserial = 2.0 * U1 / (static_cast<double>(n1) * n2) - 1.0;
+    }
+
     if (mode == "asymptotic" || (mode == "auto" && !is_exact_possible))
     {
         // Compute two-sided pvalues from standard normal distribution.
@@ -160,7 +170,7 @@ std::tuple<double, double, double> pairwise_nan_mwu(const DataMatrix& bin_data, 
         if (std::isnan(abs(z_value)))
             return get_nans_mwu();
         const double pvalue = 2.0 * (1-cdf(dist, abs(z_value)));
-        return std::make_tuple(pvalue, U1, r_effect);
+        return std::make_tuple(pvalue, U1, r_effect, rank_biserial);
         
     }
     else if (mode == "exact" || (mode == "auto" && is_exact_possible))
@@ -168,7 +178,7 @@ std::tuple<double, double, double> pairwise_nan_mwu(const DataMatrix& bin_data, 
         // Use efficient dynamic programming approach by Andreas Loeffler to compute exact pvalues.
         const int rounded_u = static_cast<int>(std::round(U));
         const double pvalue = compute_exact_pvalue(n1, n2, rounded_u);
-        return std::make_tuple(pvalue, U1, r_effect);
+        return std::make_tuple(pvalue, U1, r_effect, rank_biserial);
     }
     else 
     {
@@ -189,7 +199,8 @@ std::map<std::string, DataMatrix> statistics::mwu_with_nans(const DataMatrix& bi
     bool compute_pval = false;
     bool compute_u = false;
     bool compute_r = false;
-    DataMatrix pvalues(0,0), u_stat(0,0), r_effect(0,0);
+    bool compute_rb = false;
+    DataMatrix pvalues(0,0), u_stat(0,0), r_effect(0,0), rb_effect(0,0);
     
     if (return_types.count("p_unadjusted"))
     {
@@ -205,6 +216,11 @@ std::map<std::string, DataMatrix> statistics::mwu_with_nans(const DataMatrix& bi
     {
         r_effect = DataMatrix(num_bin_variables, num_cont_variables);
         compute_r = true;
+    }
+    if (return_types.count("rb"))
+    {
+        rb_effect = DataMatrix(num_bin_variables, num_cont_variables);
+        compute_rb = true;
     }
 
     #pragma omp parallel for 
@@ -252,7 +268,7 @@ std::map<std::string, DataMatrix> statistics::mwu_with_nans(const DataMatrix& bi
 
         for (int iBin = 0; iBin < num_bin_variables; ++iBin)
         {
-            std::tuple<double, double, double> results = pairwise_nan_mwu(bin_data, 
+            std::tuple<double, double, double, double> results = pairwise_nan_mwu(bin_data, 
                 iBin, row_map, na_value, mode);
             if (compute_pval)
                 pvalues(iBin, iCont) = std::get<0>(results);
@@ -260,6 +276,8 @@ std::map<std::string, DataMatrix> statistics::mwu_with_nans(const DataMatrix& bi
                 u_stat(iBin, iCont) = std::get<1>(results);
             if (compute_r)
                 r_effect(iBin, iCont) = std::get<2>(results);
+            if (compute_rb)
+                rb_effect(iBin, iCont) = std::get<3>(results);
         }
     }    
 
@@ -271,6 +289,8 @@ std::map<std::string, DataMatrix> statistics::mwu_with_nans(const DataMatrix& bi
         output.insert(std::make_pair("U", u_stat));
     if (compute_r)
         output.insert(std::make_pair("r", r_effect));
+    if (compute_rb)
+        output.insert(std::make_pair("rb", rb_effect));
     
     return output;
 }

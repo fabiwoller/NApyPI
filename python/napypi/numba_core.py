@@ -697,7 +697,7 @@ def compute_exact_pvalue(n : int, m : int, u : int):
 
 @njit(parallel=True, fastmath=False, nogil=True)
 def mann_whitney_numba(bin_data : np.ndarray, cont_data : np.ndarray,  nan_value : float, compute_pvalues : bool,
-                compute_u : bool, compute_r : bool, num_threads : int, mode : int):
+                compute_u : bool, compute_r : bool, compute_rank_biserial : bool, num_threads : int, mode : int):
     """
         Computes pairwise MWU tests for all combinations of variables in binary and continuous data.
         Args:
@@ -707,6 +707,7 @@ def mann_whitney_numba(bin_data : np.ndarray, cont_data : np.ndarray,  nan_value
             compute_pvalues: Whether or not to compute and return pvalues.
             compute_u : Wheter or not to compute and return U-statistic values.
             compute_r: Whether or not compute and return Pearson's r effect size values.
+            compute_rank_biserial: Whether or not to compute and return rank-biserial correlation values.
             num_threads : Number of threads to use in parallel computation.
             mode: Which mode to use for computation of U statistic (0=='auto', 1=='exact', 2=='asymptotic').
         Returns:
@@ -726,6 +727,8 @@ def mann_whitney_numba(bin_data : np.ndarray, cont_data : np.ndarray,  nan_value
         u_matrix = np.zeros((num_bin_variables, num_cont_variables), dtype=np.float64)
     if compute_r:
         r_matrix = np.zeros((num_bin_variables, num_cont_variables), dtype=np.float64)
+    if compute_rank_biserial:
+        rb_matrix = np.zeros((num_bin_variables, num_cont_variables), dtype=np.float64)
 
     # Cast data matrix from float to int to represent categories.
     bin_data = bin_data.astype(np.int32)
@@ -841,6 +844,12 @@ def mann_whitney_numba(bin_data : np.ndarray, cont_data : np.ndarray,  nan_value
                 r_effect = np.nan
             else:
                 r_effect = z_value / np.sqrt(n)
+            
+            # Rank-biserial correlation (signed)
+            if n1 == 0 or n2 == 0:
+                rank_biserial = np.nan
+            else:
+                rank_biserial = 2.0 * U1 / (n1 * n2) - 1.0
 
             # Compute P-value based on asymptotic mode if desired and possible.
             if mode == 2 or (mode == 0 and not is_exact_possible):
@@ -852,6 +861,8 @@ def mann_whitney_numba(bin_data : np.ndarray, cont_data : np.ndarray,  nan_value
                     u_matrix[bin_row, cont_row] = U1
                 if compute_r:
                     r_matrix[bin_row, cont_row] = r_effect
+                if compute_rank_biserial:
+                    rb_matrix[bin_row, cont_row] = rank_biserial
             elif mode == 1 or (mode == 0 and is_exact_possible):
                 # Compute exact P-values based on efficient dynamic programming approach presented by Andreas Loeffler.
                 rounded_u = int(U)
@@ -862,8 +873,10 @@ def mann_whitney_numba(bin_data : np.ndarray, cont_data : np.ndarray,  nan_value
                     u_matrix[bin_row, cont_row] = U1
                 if compute_r:
                     r_matrix[bin_row, cont_row] = r_effect
+                if compute_rank_biserial:
+                    rb_matrix[bin_row, cont_row] = rank_biserial
 
-    return pvalue_matrix, u_matrix, r_matrix
+    return pvalue_matrix, u_matrix, r_matrix, rb_matrix
 
 @njit(parallel=True, fastmath=False, nogil=True)
 def anova_numba(cat_data : np.ndarray, cont_data : np.ndarray, category_groups : np.ndarray,

@@ -831,11 +831,11 @@ def mwu(bin_data: np.array, cont_data: np.array, nan_value: float = -999, axis: 
         raise ValueError(f"Invalid Mann-Whitney-U test mode : {mode}.")
 
     if not set(return_types).issubset(
-            {'U', 'r', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek'}):
+            {'U', 'r', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek', 'rb'}):
         raise ValueError(f"Unknown return type in input list: {return_types}.")
 
     if len(return_types) == 0:
-        return_types = ['U', 'r', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek']
+        return_types = ['U', 'r', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek', 'rb']
 
     # Transpose data if necessary.
     if axis == 1:
@@ -883,12 +883,14 @@ def mwu(bin_data: np.array, cont_data: np.array, nan_value: float = -999, axis: 
         compute_pvalues = 'p_unadjusted' in return_types_mod
         compute_u = 'U' in return_types_mod
         compute_r = 'r' in return_types_mod
-        pvalue_mat, u_mat, r_mat = mann_whitney_numba(bin_data, cont_data, nan_value, compute_pvalues,
-                                                                     compute_u, compute_r, threads, mode_int)
+        compute_rb = 'rb' in return_types_mod
+        pvalue_mat, u_mat, r_mat, rb_mat = mann_whitney_numba(bin_data, cont_data, nan_value, compute_pvalues,
+                                                                     compute_u, compute_r, compute_rb, threads, mode_int)
         result_dict = dict()
         result_dict["p_unadjusted"] = pvalue_mat
         result_dict["U"] = u_mat
         result_dict["r"] = r_mat
+        result_dict["rb"] = rb_mat
     
     # Clip values to 0 and 1
     result_dict["p_unadjusted"] =  np.clip(result_dict["p_unadjusted"], a_min=0.0, a_max=1.0)
@@ -900,6 +902,9 @@ def mwu(bin_data: np.array, cont_data: np.array, nan_value: float = -999, axis: 
 
     if 'r' in return_types:
         output_dic["r"] = np.array(result_dict["r"], copy=False)
+
+    if 'rb' in return_types:
+        output_dic["rb"] = np.array(result_dict["rb"], copy=False)
 
     # Check if P-value results are desired.
     if 'p_unadjusted' in result_dict.keys():

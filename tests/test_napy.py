@@ -1281,6 +1281,70 @@ class TestMWU(unittest.TestCase):
         out_dict = napy.mwu(bin_data, cont_data, mode='asymptotic', use_numba=USE_NUMBA)
         r = out_dict['r']
         self.assertAlmostEqual(abs(r[0][0]), eff_size_r)
+        
+    def test_rank_biserial_no_ties(self):
+        """
+        Test rank-biserial correlation against R effectsize package.
+        """
+
+        rank_biserial = robjects.r['rank_biserial']
+
+        x = np.array([4, 2, 5, 1])
+        y = np.array([3, 6, 10, 8])
+
+        r_x = numpy2ri.py2rpy(x)
+        r_y = numpy2ri.py2rpy(y)
+
+        # R effectsize result
+        res = rank_biserial(r_x, r_y)
+        r_rb_r = float(res.rx2("r_rank_biserial")[0])
+
+        # Python implementation
+        bin_data = np.array([[0, 0, 0, 0, 1, 1, 1, 1]])
+        cont_data = np.array([[4, 2, 5, 1, 3, 6, 10, 8]])
+
+        out_dict = napy.mwu(
+            bin_data,
+            cont_data,
+            mode="exact",
+            use_numba=USE_NUMBA,
+        )
+
+        r_rb_py = out_dict["rb"][0][0]
+        # Sign not relevant here, since this depends which group is chosen as reference.
+        self.assertTrue(abs(r_rb_py) == abs(r_rb_r))
+        
+    def test_rank_biserial_with_ties(self):
+        """
+        Test rank-biserial correlation against R effectsize package.
+        """
+
+        rank_biserial = robjects.r['rank_biserial']
+
+        x = np.array([4, 1, 5, 1])
+        y = np.array([3, 6, 10, 8])
+
+        r_x = numpy2ri.py2rpy(x)
+        r_y = numpy2ri.py2rpy(y)
+
+        # R effectsize result
+        res = rank_biserial(r_x, r_y)
+        r_rb_r = float(res.rx2("r_rank_biserial")[0])
+
+        # Python implementation
+        bin_data = np.array([[0, 0, 0, 0, 1, 1, 1, 1]])
+        cont_data = np.array([[4, 1, 5, 1, 3, 6, 10, 8]])
+
+        out_dict = napy.mwu(
+            bin_data,
+            cont_data,
+            mode="exact",
+            use_numba=USE_NUMBA,
+        )
+
+        r_rb_py = out_dict["rb"][0][0]
+        # Sign not relevant here, since this depends which group is chosen as reference.
+        self.assertTrue(abs(r_rb_py) == abs(r_rb_r))
 
     def test_na_removal(self):
         """
