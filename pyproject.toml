@@ -22,7 +22,8 @@ dependencies = [
                 "numba==0.60.0",
                 "numba-scipy==0.4.0",
                 "numpy==1.26.*",
-                "scipy==1.11.0"
+                "scipy==1.11.0",
+                "pingouin==0.6.1"
                 ]
 
 [tool.scikit-build]

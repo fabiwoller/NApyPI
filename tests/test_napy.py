@@ -2,6 +2,7 @@ import napypi as napy
 import numpy as np
 import scipy as sc
 import pandas as pd
+import pingouin as pg
 import unittest
 import rpy2.robjects as robjects
 import rpy2.robjects.numpy2ri as numpy2ri
@@ -1405,6 +1406,177 @@ class TestMWU(unittest.TestCase):
         p_par = out_dict_par['p_unadjusted']
         self.assertListEqual(s.tolist(), s_par.tolist())
         self.assertListEqual(p.tolist(), p_par.tolist())
+
+class TestPartialCorrelation(unittest.TestCase):
+    
+    def test_basic(self):
+        """Test basic partial correlation computation against pingouin.
+        """
+        data = np.array([[2, 4, 15, 20, 25], [1, 2, 3, 4, 5], [0, 0, 1, 1, 1]])
+        nan_value = -99
+        out_dict = napy.partial_correlation(data, covar_indices=[2], nan_value=nan_value, axis=0, threads=1)
+        napy_corr = out_dict['correlation']
+        napy_pvalues = out_dict['p_unadjusted']
+        pg_res = pg.pairwise_corr(data=pd.DataFrame(data.T), columns=[0, 1], covar=[2], method='pearson')
+        pingouin_corr, pingouin_pvals = pg_res.loc[(pg_res['X'] == 0) & (pg_res['Y'] == 1), ['r', 'p_unc']].values[0]
+        self.assertEqual(napy_corr[0,0], 1.0)
+        self.assertEqual(napy_pvalues[0,0], 0.0)
+        self.assertAlmostEqual(napy_corr[0,1], pingouin_corr)
+        self.assertAlmostEqual(napy_pvalues[0,1], pingouin_pvals)
+        self.assertAlmostEqual(napy_corr[0,1], napy_corr[1,0])
+        self.assertAlmostEqual(napy_pvalues[0,1], napy_pvalues[1,0])
+        
+    def test_spearman(self):
+        """Test spearman partial correlation computation against pingouin.
+        """
+        # data = np.array([[2, 4, 15, 20, 25], [1, 2, 3, 4, 5], [0, 0, 1, 1, 1]])
+        
+        data = np.array([[0.45014089, 0.44373781, 0.19470788, 0.98394716, 0.30484417,
+        0.07198886, 0.872382  , 0.27466063, 0.2104761 , 0.95397527],
+       [0.77095329, 0.61150653, 0.14472615, 0.74360492, 0.7405351 ,
+        0.0914575 , 0.73462676, 0.53589392, 0.39264653, 0.23046924],
+       [0.22026902, 0.5736392 , 0.34283945, 0.49448341, 0.98865515,
+        0.90758143, 0.49381191, 0.71867761, 0.03594215, 0.04812974]])
+        
+        nan_value = -99
+        out_dict = napy.partial_correlation(data, covar_indices=[2], method='spearman', nan_value=nan_value, axis=0, threads=1)
+        napy_corr = out_dict['correlation']
+        napy_pvals = out_dict['p_unadjusted']
+        pg_res = pg.pairwise_corr(data=pd.DataFrame(data.T), columns=[0, 1], covar=[2], method='spearman')
+        pingouin_corr, pingouin_pvals = pg_res.loc[(pg_res['X'] == 0) & (pg_res['Y'] == 1), ['r', 'p_unc']].values[0]
+        self.assertEqual(napy_corr[0,0], 1.0)
+        self.assertEqual(napy_pvals[0,0], 0.0)
+        self.assertAlmostEqual(napy_corr[0,1], pingouin_corr)
+        self.assertAlmostEqual(napy_pvals[0,1], pingouin_pvals)
+        self.assertAlmostEqual(napy_corr[0,1], napy_corr[1,0])
+        self.assertAlmostEqual(napy_pvals[0,1], napy_pvals[1,0])
+        
+    def test_no_confunder(self):
+        """Test that partial correlation without confunder matches regular correlation.
+        """
+        data = np.array([[2, 4, 15, 20, 25], [1, 2, 3, 4, 5], [0, 0, 1, 1, 1]])
+        nan_value = -99
+        out_dict = napy.partial_correlation(data, covar_indices=[], nan_value=nan_value, axis=0, threads=1)
+        napy_corr = out_dict['correlation']
+        napy_pvalues = out_dict['p_unadjusted']
+        scipy_corr, scipy_pvals = sc.stats.pearsonr(data[0], data[1])
+        self.assertEqual(napy_corr[0,0], 1.0)
+        self.assertEqual(napy_pvalues[0,0], 0.0)
+        self.assertAlmostEqual(napy_corr[0,1], scipy_corr)
+        self.assertAlmostEqual(napy_pvalues[0,1], scipy_pvals)
+        self.assertAlmostEqual(napy_corr[0,1], napy_corr[1,0])
+        self.assertAlmostEqual(napy_pvalues[0,1], napy_pvalues[1,0])
+        
+    def test_too_few_samples(self):
+        """Test behavior when too few samples are present after NA removal.
+        """
+        data = np.array([[2, -99, 15, 20, 25], [1, 2, -99, 4, 5], [0, 0, 0, -99, 1]])
+        nan_value = -99
+        out_dict = napy.partial_correlation(data, covar_indices=[2], nan_value=nan_value, axis=0, threads=1)
+        napy_corr = out_dict['correlation']
+        napy_pvalues = out_dict['p_unadjusted']
+        self.assertTrue(np.isnan(napy_corr[0,1]))
+        self.assertTrue(np.isnan(napy_pvalues[0,1]))
+        self.assertTrue(np.isnan(napy_corr[1,0]))
+        self.assertTrue(np.isnan(napy_pvalues[1,0]))
+        
+    def test_large(self):
+        """Test large data partial correlation computation against pingouin.
+        """
+        np.random.seed(0)
+        data = np.random.rand(100, 20)
+        nan_value = -99
+        out_dict = napy.partial_correlation(data, covar_indices=list(range(10, 20)), nan_value=nan_value, axis=0, threads=1)
+        napy_corr = out_dict['correlation']
+        napy_pvals = out_dict['p_unadjusted']
+        pg_res = pg.pairwise_corr(data=pd.DataFrame(data.T), columns=list(range(10)), covar=list(range(10, 20)), method='pearson')
+        for i in range(10):
+            for j in range(i+1, 10):
+                pingouin_corr, pingouin_pvals = pg_res.loc[(pg_res['X'] == i) & (pg_res['Y'] == j), ['r', 'p_unc']].values[0]
+                self.assertAlmostEqual(napy_corr[i,j], pingouin_corr)
+                self.assertAlmostEqual(napy_pvals[i,j], pingouin_pvals)
+                self.assertAlmostEqual(napy_corr[i,j], napy_corr[j,i])
+                self.assertAlmostEqual(napy_pvals[i,j], napy_pvals[j,i])
+                
+    
+    def test_multiple_confunder(self):
+        """Test partial correltaion for multiple collumn as confunders
+        """
+        data = np.array([[2, 4, 6, 8, 25, 30, 35, 40, 45], [1, 2, 3, 4, 5, 6, 7, 8, 9], [0, 0, 0, 0, 1, 1, 1, 1, 1], [5, 3, 2, 4, 6, 7, 5, 3, 6], [10, 12, 14, 11, 13, 15, 14, 16, 18]])
+        nan_value = -99
+        out_dict = napy.partial_correlation(data, covar_indices=[2, 3, 4], nan_value=nan_value, axis=0, threads=1)
+        napy_corr = out_dict['correlation']
+        napy_pvalues = out_dict['p_unadjusted']
+        pg_res = pg.pairwise_corr(data=pd.DataFrame(data.T), columns=[0, 1], covar=[2, 3, 4], method='pearson')
+        pingouin_corr, pingouin_pvals = pg_res.loc[(pg_res['X'] == 0) & (pg_res['Y'] == 1), ['r', 'p_unc']].values[0]
+        self.assertEqual(napy_corr[0,0], 1.0)
+        self.assertEqual(napy_pvalues[0,0], 0.0)
+        self.assertAlmostEqual(napy_corr[0,1], pingouin_corr)
+        self.assertAlmostEqual(napy_pvalues[0,1], pingouin_pvals)
+        self.assertAlmostEqual(napy_corr[0,1], napy_corr[1,0])
+        self.assertAlmostEqual(napy_pvalues[0,1], napy_pvalues[1,0])
+        
+    def test_confunder_variable_overlap(self):
+        """ Test behaviour of partial correlation when confunder variables overlap with target variables.
+        """
+        data = np.array([[2, 4, 15, 20, 25], [1, 2, 3, 4, 5], [0, 0, 1, 1, 1]])
+        nan_value = -99
+        out_dict = napy.partial_correlation(data, covar_indices=[1], nan_value=nan_value, axis=0, threads=1)
+        napy_corr = out_dict['correlation']
+        napy_pvalues = out_dict['p_unadjusted']
+        self.assertTrue(np.isnan(napy_corr[0,1]))
+        self.assertTrue(np.isnan(napy_pvalues[0,1]))
+        self.assertTrue(np.isnan(napy_corr[1,0]))
+        self.assertTrue(np.isnan(napy_pvalues[1,0]))
+    
+    def test_nans(self):
+        """Test partial correlation computation with NaNs against pingouin.
+        """
+        nan_value = -99
+        data = np.array([[2, 4, 15, 20, nan_value, 30, 35], [1, 2, 3, 4, 5, 6, 7], [0, 0, 1, 1, 1, nan_value, 1]])
+        out_dict = napy.partial_correlation(data, covar_indices=[2], nan_value=nan_value, axis=0, threads=1)
+        napy_corr = out_dict['correlation']
+        napy_pvals = out_dict['p_unadjusted']
+        data = pd.DataFrame(data.T)
+        data[data == nan_value] = pd.NA
+        pg_res = pg.pairwise_corr(data=data, columns=[0, 1], covar=[2], method='pearson', nan_policy='pairwise')
+        pingouin_corr, pingouin_pvals = pg_res.loc[(pg_res['X'] == 0) & (pg_res['Y'] == 1), ['r', 'p_unc']].values[0]
+        self.assertEqual(napy_corr[0,0], 1.0)
+        self.assertEqual(napy_pvals[0,0], 0.0)
+        self.assertAlmostEqual(napy_corr[0,1], pingouin_corr)
+        self.assertAlmostEqual(napy_pvals[0,1], pingouin_pvals)
+        self.assertAlmostEqual(napy_corr[0,1], napy_corr[1,0])
+        self.assertAlmostEqual(napy_pvals[0,1], napy_pvals[1,0])
+        
+    def test_axis(self):
+        """Test axis parameter functionality.
+        """
+        data = np.array([[2, 4, 15, 20, 25], [1, 2, 3, 4, 5], [0, 0, 1, 1, 1]])
+        nan_value = -99
+        out_dict = napy.partial_correlation(data, covar_indices=[2], nan_value=nan_value, axis=0, threads=1)
+        napy_corr = out_dict['correlation']
+        napy_pvals = out_dict['p_unadjusted']
+        data_t = data.T.copy()
+        out_dict_t = napy.partial_correlation(data_t, covar_indices=[2], nan_value=nan_value, axis=1, threads=1)
+        napy_corr_t = out_dict_t['correlation']
+        napy_pvals_t = out_dict_t['p_unadjusted']
+        np.testing.assert_equal(napy_corr.tolist(), napy_corr_t.tolist())
+        np.testing.assert_equal(napy_pvals.tolist(), napy_pvals_t.tolist())
+        
+    def test_parallel(self):
+        """Test parallel functionality.
+        """
+        data = np.array([[2, 4, 15, 20, 25], [1, 2, 3, 4, 5], [0, 0, 1, 1, 1]])
+        nan_value = -99
+        out_dict = napy.partial_correlation(data, covar_indices=[2], nan_value=nan_value, axis=0, threads=1)
+        napy_corr = out_dict['correlation']
+        napy_pvals = out_dict['p_unadjusted']
+        out_dict_par = napy.partial_correlation(data, covar_indices=[2], nan_value=nan_value, axis=0, threads=4)
+        napy_corr_par = out_dict_par['correlation']
+        napy_pvals_par = out_dict_par['p_unadjusted']
+        np.testing.assert_equal(napy_corr.tolist(), napy_corr_par.tolist())
+        np.testing.assert_equal(napy_pvals.tolist(), napy_pvals_par.tolist())
+
 
 if __name__ == "__main__":
     robjects.r['options'](warn=-1)
