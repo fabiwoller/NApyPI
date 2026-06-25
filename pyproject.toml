@@ -9,7 +9,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "napypi"
-version = "1.1.8"
+version = "1.1.9"
 description = "Efficient statistics in Python for large-scale heterogeneous data with enhanced support for missing data"
 readme = "README.md"
 requires-python = ">=3.9, <3.12"
@@ -17,12 +17,19 @@ license = { text = "GPL-3.0-only" }
 license-files = ["LICENSE"]
 authors = [{name = "Fabian Woller"}]
 dependencies = [
-                "torch", 
+                "torch",
                 "pandas",
                 "numba==0.60.0",
                 "numba-scipy==0.4.0",
                 "numpy==1.26.*",
-                "scipy==1.11.0",
+                "scipy==1.11.0"
+                ]
+
+[project.optional-dependencies]
+# Only needed to run the test suite (validates NApy against pingouin/scipy/R).
+# pingouin 0.6.1 requires Python >=3.10, so it is NOT a runtime dependency:
+# pinning it as one breaks installing the cp39 wheel.
+test = [
                 "pingouin==0.6.1"
                 ]
 
