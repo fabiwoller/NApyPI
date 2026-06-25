@@ -64,7 +64,9 @@ std::tuple<double, double, double, double> pairwise_nan_chi_squared(const DataMa
     boost::math::chi_squared dist(num_dofs);
     if (std::isnan(statistics_value) || statistics_value < 0)
         return get_nan_four_tuple();
-    const double pvalue = 1 - cdf(dist, statistics_value);
+    // Evaluate the upper tail directly via the complement to avoid catastrophic
+    // cancellation of 1 - cdf, which would round small P-values to exactly 0.
+    const double pvalue = cdf(complement(dist, statistics_value));
 
     return std::make_tuple(pvalue, statistics_value, phi_value, cramers_v);
 }

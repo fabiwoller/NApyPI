@@ -89,7 +89,9 @@ std::tuple<double, double, double> pairwise_nan_ttest(const DataMatrix& bin_data
         boost::math::students_t dist(dofs);
         if (std::isnan(abs(statistic_value)))
             return get_ttest_nans();
-        pvalue = 2.0 * (1-cdf(dist, abs(statistic_value)));
+        // Use the complement (upper tail) instead of 1 - cdf to avoid rounding
+        // very small P-values to exactly 0.
+        pvalue = 2.0 * cdf(complement(dist, abs(statistic_value)));
     }
     else
         pvalue = std::numeric_limits<double>::quiet_NaN();

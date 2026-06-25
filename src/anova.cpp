@@ -117,7 +117,9 @@ std::tuple<double, double, double> pairwise_nan_anova(const DataMatrix& cat_data
         return get_nan_three_tuple();
     }
     boost::math::fisher_f dist(dof_bg, dof_wg);
-    pvalue = 1 - cdf(dist, statistic);
+    // Use the complement (upper tail) instead of 1 - cdf to avoid rounding
+    // very small P-values to exactly 0.
+    pvalue = cdf(complement(dist, statistic));
 
     return std::make_tuple(pvalue, statistic, np2_value);
 }

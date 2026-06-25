@@ -4,6 +4,7 @@
 #include <boost/math/distributions/chi_squared.hpp>
 #include <boost/math/distributions/fisher_f.hpp>
 #include <boost/math/distributions/normal.hpp>
+#include <boost/math/distributions/complement.hpp>
 #include <utility>
 #include <numeric>
 #include <matrix.hpp>

@@ -112,7 +112,9 @@ std::tuple<double, double, double> pairwise_nan_kruskal(const DataMatrix& cat_da
         if (h_statistic < 0 || std::isnan(h_statistic) || std::isinf(h_statistic))
             return get_nans_kruskal();
         else
-            pvalue = 1 - cdf(dist, h_statistic);
+            // Use the complement (upper tail) instead of 1 - cdf to avoid
+            // rounding very small P-values to exactly 0.
+            pvalue = cdf(complement(dist, h_statistic));
     }
     return std::make_tuple(pvalue, h_statistic, eta_squared_value);
 }

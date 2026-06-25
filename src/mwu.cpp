@@ -169,7 +169,9 @@ std::tuple<double, double, double, double> pairwise_nan_mwu(const DataMatrix& bi
         boost::math::normal dist(0,1);
         if (std::isnan(abs(z_value)))
             return get_nans_mwu();
-        const double pvalue = 2.0 * (1-cdf(dist, abs(z_value)));
+        // Use the complement (upper tail) instead of 1 - cdf to avoid rounding
+        // very small P-values to exactly 0.
+        const double pvalue = 2.0 * cdf(complement(dist, abs(z_value)));
         return std::make_tuple(pvalue, U1, r_effect, rank_biserial);
         
     }
