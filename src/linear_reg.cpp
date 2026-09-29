@@ -1,5 +1,6 @@
 #include "stats.hpp"
 #include <algorithm>
+#include <cstddef>
 #include <eigen3/Eigen/Dense>
 
 using Eigen::MatrixXd;
@@ -341,9 +342,13 @@ std::map<std::string, DataMatrix> statistics::linear_regression_with_nans(
 
     // Rows are continuous dependent variables, columns are categorical predictors followed by continuous
     // predictors. Pairs involving a confounder and self-regressions stay NaN.
+    // MSVC only implements OpenMP 2.0, which requires a signed loop index, so the parallel
+    // loop runs over a signed counter and converts back to size_t for the body.
+    const std::ptrdiff_t num_cont_variables_signed = static_cast<std::ptrdiff_t>(num_cont_variables);
     #pragma omp parallel for schedule(dynamic)
-    for (size_t dependent_idx = 0; dependent_idx < num_cont_variables; ++dependent_idx)
+    for (std::ptrdiff_t dependent_row = 0; dependent_row < num_cont_variables_signed; ++dependent_row)
     {
+        const size_t dependent_idx = static_cast<size_t>(dependent_row);
         const bool dependent_is_confounder = is_control_row(control_rows_continuous, dependent_idx);
 
         for (size_t independent_idx = 0; independent_idx < num_cat_variables; ++independent_idx)

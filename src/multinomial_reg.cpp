@@ -1,5 +1,6 @@
 #include "stats.hpp"
 #include <algorithm>
+#include <cstddef>
 #include <mlpack.hpp>
 
 using namespace std;
@@ -317,9 +318,13 @@ std::pair<DataMatrix, DataMatrix> statistics::multinomial_regression_test_with_n
         return std::find(control_rows.begin(), control_rows.end(), static_cast<int>(row_index)) != control_rows.end();
     };
 
+    // MSVC only implements OpenMP 2.0, which requires a signed loop index, so the parallel
+    // loop runs over a signed counter and converts back to size_t for the body.
+    const std::ptrdiff_t num_cat_variables_signed = static_cast<std::ptrdiff_t>(num_cat_variables);
     #pragma omp parallel for
-    for (size_t dependent_idx = 0; dependent_idx < num_cat_variables; ++dependent_idx)
+    for (std::ptrdiff_t dependent_row = 0; dependent_row < num_cat_variables_signed; ++dependent_row)
     {
+        const size_t dependent_idx = static_cast<size_t>(dependent_row);
         if (is_control_row(control_rows_categorical, dependent_idx))
         {
             for (size_t independent_idx = 0; independent_idx < num_comb_variables; ++independent_idx)
