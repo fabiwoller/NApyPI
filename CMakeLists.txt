@@ -25,10 +25,21 @@ pybind11_add_module(_core
     src/ttest.cpp
     src/partialcorr.cpp
     src/multinomial_reg.cpp
+    src/multinomial_reg_impl.cpp
     src/linear_reg.cpp
 )
 
 target_compile_features(_core PRIVATE cxx_std_17)
+
+# mlpack's base.hpp hard-errors when _OPENMP is defined but below OpenMP 3.1, and
+# MSVC only implements 2.0 (/openmp:llvm is not an option: its libomp DLLs are not
+# redistributable, so they cannot ship in a wheel). Every mlpack include lives in
+# multinomial_reg_impl.cpp alone, so building just that file with /openmp- keeps
+# the parallel driver loop in multinomial_reg.cpp multi-threaded on Windows.
+if(MSVC)
+    set_source_files_properties(src/multinomial_reg_impl.cpp
+        PROPERTIES COMPILE_OPTIONS "/openmp-")
+endif()
 
 # Project headers
 target_include_directories(_core PRIVATE

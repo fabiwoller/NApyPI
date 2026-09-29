@@ -114,6 +114,7 @@ jobs:
               "src/napy.cpp",
               "src/linear_reg.cpp",
               "src/multinomial_reg.cpp",
+              "src/multinomial_reg_impl.cpp",
               "include/stats.hpp",
               "python/napypi/__init__.py",
               "third_party/eigen3/eigen3/Eigen/Dense",
