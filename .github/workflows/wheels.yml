@@ -24,14 +24,28 @@ jobs:
 
           PIP_EXTRA_INDEX_URL: https://download.pytorch.org/whl/cpu
 
-          CIBW_BEFORE_BUILD_MACOS: "brew install libomp"
+          # --- LINUX SETUP ---
+          # Install OpenBLAS & LAPACK inside the manylinux Docker container
+          CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
+          CIBW_BEFORE_ALL_LINUX: "dnf install -y openblas-devel lapack-devel"
+
+          # --- MACOS SETUP ---
+          # Install libomp, OpenBLAS, and LAPACK via Homebrew
+          CIBW_BEFORE_BUILD_MACOS: "brew install libomp openblas lapack"
           CIBW_ENVIRONMENT_MACOS: >
             OpenMP_ROOT=$(brew --prefix libomp)
+            OpenBLAS_DIR=$(brew --prefix openblas)
             MACOSX_DEPLOYMENT_TARGET=11.0
 
           CIBW_REPAIR_WHEEL_COMMAND_MACOS: >
             delocate-listdeps {wheel} &&
             delocate-wheel --require-archs {delocate_archs} -w {dest_dir} {wheel}
+
+          # --- WINDOWS SETUP ---
+          # Install OpenBLAS on Windows via vcpkg
+          CIBW_BEFORE_ALL_WINDOWS: "vcpkg install openblas:x64-windows"
+          CIBW_ENVIRONMENT_WINDOWS: >
+            CMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
 
           CIBW_TEST_COMMAND: >
             python -c "import napypi; print(napypi.__version__)"
@@ -63,7 +77,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgomp1
+          sudo apt-get install -y libgomp1 libopenblas-dev liblapack-dev
 
       - name: Install napypi + CPU-only torch
         env:

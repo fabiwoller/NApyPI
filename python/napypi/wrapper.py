@@ -1,4 +1,5 @@
-from ._core import set_num_threads, pearson_with_nans, spearman_with_nans, chi_squared_with_nans, partial_correlation_with_nans
+from ._core import set_num_threads, pearson_with_nans, spearman_with_nans, chi_squared_with_nans, partial_correlation_with_nans, multinomial_regression_test_with_nans
+from ._core import linear_regression_with_nans
 from ._core import anova_with_nans, kruskal_wallis_with_nans, t_test_with_nans, mwu_with_nans, DataMatrix
 from .numba_core import pearson_numba, spearman_numba, chi2_numba, kruskal_wallis_numba
 from .numba_core import ttest_numba, mann_whitney_numba, anova_numba
@@ -1017,5 +1018,262 @@ def partial_correlation(data : np.array, covar_indices: list[int] = [], nan_valu
 
     if 'p_unadjusted' in return_types:
         output_dic["p_unadjusted"] = pvalue_mat
+
+    return output_dic
+
+def _categorical_regression(cat_data : np.ndarray, cont_data : np.ndarray, covars_categorical : list[int],
+                            covars_continuous : list[int], nan_value : float, axis : int, threads : int,
+                            return_types : list[str], binary_only : bool) -> dict:
+    """Runs likelihood-ratio tests of (multinomial) logistic regression models for all pairwise combinations of
+    categorical dependent variables and categorical and continuous predictor variables.
+
+    Args:
+        cat_data (np.ndarray): Data matrix storing categorical variables.
+        cont_data (np.ndarray): Data matrix storing continuous variables.
+        covars_categorical (list[int]): Indices of categorical variables used as covariates.
+        covars_continuous (list[int]): Indices of continuous variables used as covariates.
+        nan_value (float): Value indicating missing value.
+        axis (int): Whether to consider rows as variables (axis=0) or columns (axis=1).
+        threads (int): Number of threads to be used in parallel computation.
+        return_types (list[str]): Result matrices to return.
+        binary_only (bool): Whether to only consider binary dependent variables (logistic regression).
+
+    Returns:
+        Dictionary of data matrices with shape (cat_data.shape[0], cat_data.shape[0] + cont_data.shape[0]).
+    """
+    _check_input_data_two_matrices(cont_data, cat_data, threads, axis)
+    available_types = ['LR_statistic', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek']
+    if not set(return_types).issubset(available_types):
+        raise ValueError(f"Unknown return type in input list: {return_types}.")
+
+    if len(return_types) == 0:
+        return_types = available_types
+
+    # Transpose data if necessary.
+    if axis==1:
+        cat_data = cat_data.T.copy()
+        cont_data = cont_data.T.copy()
+
+    # Ensure float datatype and C-contiguous memory layout, which DataMatrix expects (e.g. data[:, mask] is not).
+    cat_data = np.ascontiguousarray(cat_data, dtype=np.float64)
+    cont_data = np.ascontiguousarray(cont_data, dtype=np.float64)
+    nan_value = float(nan_value)
+
+    _check_covariate_indices(covars_categorical, cat_data.shape[0], 'covars_categorical')
+    _check_covariate_indices(covars_continuous, cont_data.shape[0], 'covars_continuous')
+
+    # Set number of desired threads for computation.
+    set_num_threads(threads)
+    cat_data_mat = DataMatrix(cat_data)
+    cont_data_mat = DataMatrix(cont_data)
+    lr_mat, pvalue_mat = multinomial_regression_test_with_nans(cat_data_mat, cont_data_mat, covars_categorical,
+                                                                       covars_continuous, nan_value)
+    lr_mat = np.array(lr_mat, copy=False)
+    pvalue_mat = np.array(pvalue_mat, copy=False)
+
+    if binary_only:
+        # Non-binary categorical variables can only be used as predictors, not as dependent variables.
+        num_categories = np.array([len(np.unique(row[row != nan_value])) for row in cat_data])
+        lr_mat[num_categories != 2, :] = np.nan
+        pvalue_mat[num_categories != 2, :] = np.nan
+
+    # Clip values to range 0 and 1 (rounding errors).
+    pvalue_mat = np.clip(pvalue_mat, a_min=0.0, a_max=1.0)
+
+    output_dic = dict()
+    if 'LR_statistic' in return_types:
+        output_dic['LR_statistic'] = lr_mat
+
+    # Each pair of dependent and predictor variable is a separate test, self-regressions are already NA.
+    if 'p_bonferroni' in return_types:
+        output_dic['p_bonferroni'] = _adjust_pvalues_bonferroni(pvalue_mat.copy(), ignore_diag=False)
+
+    if 'p_benjamini_hb' in return_types:
+        output_dic['p_benjamini_hb'] = _adjust_pvalues_fdr_control(pvalue_mat.copy(), 'bh', ignore_diag=False)
+
+    if 'p_benjamini_yek' in return_types:
+        output_dic['p_benjamini_yek'] = _adjust_pvalues_fdr_control(pvalue_mat.copy(), 'by', ignore_diag=False)
+
+    if 'p_unadjusted' in return_types:
+        output_dic['p_unadjusted'] = pvalue_mat
+
+    return output_dic
+
+def logistic_regression(cat_data : np.array, cont_data : np.array, covars_categorical: list[int] = [], covars_continuous: list[int] = [], nan_value : float = -999, axis : int = 0,
+                        threads : int = 1, return_types : list[str] = [],
+                        use_numba : bool = False):
+    """Runs logistic regression likelihood-ratio tests between all pairwise combinations of binary dependent
+       variables and categorical and continuous predictor variables, adjusted for the given covariates.
+       Categorical variables with more than two categories can only be used as predictors or covariates, their
+       rows in the result matrices are NA.
+
+    Args:
+        cat_data (np.array): Data matrix storing categorical variables.
+        cont_data (np.array): Data matrix storing continuous variables.
+        covars_categorical (list[int], optional): List of categorical variable indices to be used as covariates in the logistic regression.
+        covars_continuous (list[int], optional): List of continuous variable indices to be used as covariates in the logistic regression.
+        nan_value (float, optional): Value indicating missing value. Defaults to -999.
+        axis (int, optional): Whether to consider rows as variables (axis=0) or columns (axis=1). Defaults to 0.
+        threads (int, optional): Number of threads to be used in parallel computation. Defaults to 1.
+        return_types (list[str], optional): List of result data matrices to return. Can be any subset of
+        'LR_statistic', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek'.
+        If an empty list is passed, every possible data matrix is returned.
+        use_numba (bool, optional): Whether or not to use numba-based python implementation. Not implemented yet. Defaults to False.
+    """
+    if use_numba:
+        raise NotImplementedError("Logistic regression is not implemented in numba.")
+    # Logistic regression is the special case of multinomial logistic regression with two classes.
+    return _categorical_regression(cat_data, cont_data, covars_categorical, covars_continuous, nan_value, axis,
+                                   threads, return_types, binary_only=True)
+
+def multinomial_regression(cat_data : np.array, cont_data : np.array, covars_categorical: list[int] = [], covars_continuous: list[int] = [], nan_value : float = -999, axis : int = 0,
+                        threads : int = 1, return_types : list[str] = [],
+                        use_numba : bool = False):
+    """Runs multinomial logistic regression tests on independence between all pairwise combinations of categorical and continuous input data variables.
+
+    Args:
+        cat_data (np.array): Data matrix storing categorical variables.
+        cont_data (np.array): Data matrix storing continuous variables.
+        covars_categorical (list[int], optional): List of categorical variable indices to be used as covariates.
+        covars_continuous (list[int], optional): List of continuous variable indices to be used as covariates.
+        nan_value (float, optional): Value indicating missing value. Defaults to -999.
+        axis (int, optional): Whether to consider rows as variables (axis=0) or columns (axis=1). Defaults to 0.
+        threads (int, optional): Number of threads to be used in parallel computation. Defaults to 1.
+        return_types (list[str], optional): List of result data matrices to return. Can be any subset of
+        'LR_statistic', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek'.
+        If an empty list is passed, every possible data matrix is returned.
+        use_numba (bool, optional): Whether or not to use numba-based python implementation. Not implemented yet. Defaults to False.
+    """
+    if use_numba:
+        raise NotImplementedError("Multinomial logistic regression is not implemented in numba.")
+    return _categorical_regression(cat_data, cont_data, covars_categorical, covars_continuous, nan_value, axis,
+                                   threads, return_types, binary_only=False)
+
+def _check_covariate_indices(covar_indices : list[int], num_variables : int, name : str):
+    """Check that covariate indices are unique and within range.
+
+    Args:
+        covar_indices (list[int]): Indices of covariate variables.
+        num_variables (int): Number of variables in the corresponding data matrix.
+        name (str): Name of the covariate argument used in error messages.
+    """
+    invalid_indices = [idx for idx in covar_indices if idx < 0 or idx >= num_variables]
+    if invalid_indices:
+        raise ValueError(f"Invalid indices {invalid_indices} in {name}. Valid range is 0 to {num_variables - 1}.")
+    if len(set(covar_indices)) != len(covar_indices):
+        raise ValueError(f"Duplicate indices found in {name}: {covar_indices}")
+
+def _adjust_pvalues_linear_regression(pval_matrix : np.ndarray, num_cat : int, method : str) -> np.ndarray:
+    """Correct linear regression P-value matrix for multiple testing. The partial F-test of a continuous dependent
+    variable on a continuous predictor is identical to the test with both roles swapped, hence each test in the
+    symmetric continuous vs. continuous block is only counted once.
+
+    Args:
+        pval_matrix (np.ndarray): P-value matrix of shape (num_cont, num_cat + num_cont).
+        num_cat (int): Number of categorical variables, i.e. number of leading columns with categorical predictors.
+        method (str): One of 'bonferroni', 'bh' or 'by'.
+
+    Returns:
+        Corrected P-value matrix of same shape. NAs are ignored in the number of performed tests.
+    """
+    num_cont = pval_matrix.shape[0]
+    unique_mask = np.ones(pval_matrix.shape, dtype=bool)
+    unique_mask[:, num_cat:] = np.triu(np.ones((num_cont, num_cont), dtype=bool), k=1)
+    unique_mask &= ~np.isnan(pval_matrix)
+
+    adjusted = np.full(pval_matrix.shape, np.nan)
+    if unique_mask.any():
+        pvalues = pval_matrix[unique_mask].reshape(1, -1)
+        if method == 'bonferroni':
+            pvalues = _adjust_pvalues_bonferroni(pvalues, ignore_diag=False)
+        else:
+            pvalues = _adjust_pvalues_fdr_control(pvalues, method, ignore_diag=False)
+        adjusted[unique_mask] = pvalues.ravel()
+
+    # Mirror adjusted P-values from upper to lower triangle of the continuous block.
+    cont_block = adjusted[:, num_cat:]
+    lower_indices = np.tril_indices(num_cont, -1)
+    cont_block[lower_indices] = cont_block.T[lower_indices]
+    return adjusted
+
+def linear_regression(cat_data : np.array, cont_data : np.array, covars_categorical : list[int] = [],
+                      covars_continuous : list[int] = [], nan_value : float = -999, axis : int = 0,
+                      threads : int = 1, return_types : list[str] = []):
+    """Runs linear regressions of all continuous (dependent) variables on all categorical and continuous
+    (independent) variables, adjusted for the given categorical and continuous covariates. For each pair, the full
+    model y ~ covariates + x is compared to the reduced model y ~ covariates with a partial F-test.
+
+    Args:
+        cat_data (np.array): Data matrix storing categorical variables.
+        cont_data (np.array): Data matrix storing continuous variables.
+        covars_categorical (list[int], optional): Indices of categorical variables used as covariates.
+        covars_continuous (list[int], optional): Indices of continuous variables used as covariates.
+        nan_value (float, optional): Value indicating missing value. Defaults to -999.
+        axis (int, optional): Whether to consider rows as variables (axis=0) or columns (axis=1). Defaults to 0.
+        threads (int, optional): Number of threads to be used in parallel computation. Defaults to 1.
+        return_types (list[str], optional): List of result data matrices to return. Can be any subset of
+        'F', 'np2', 'cohens_f2', 'beta', 'std_beta', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb',
+        'p_benjamini_yek'. If an empty list is passed, every possible data matrix is returned.
+
+    Returns:
+        Dictionary of data matrices with shape (cont_data.shape[0], cat_data.shape[0] + cont_data.shape[0]).
+        Row i corresponds to continuous dependent variable i, column j to categorical predictor j and column
+        cat_data.shape[0] + j to continuous predictor j.
+    """
+    _check_input_data_two_matrices(cont_data, cat_data, threads, axis)
+    available_types = ['F', 'np2', 'cohens_f2', 'beta', 'std_beta', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb',
+                       'p_benjamini_yek']
+    if not set(return_types).issubset(available_types):
+        raise ValueError(f"Unknown return type in input list: {return_types}.")
+
+    if len(return_types) == 0:
+        return_types = available_types
+
+    # Transpose data if necessary.
+    if axis==1:
+        cat_data = cat_data.T.copy()
+        cont_data = cont_data.T.copy()
+
+    # Ensure float datatype and C-contiguous memory layout, which DataMatrix expects (e.g. data[:, mask] is not).
+    cat_data = np.ascontiguousarray(cat_data, dtype=np.float64)
+    cont_data = np.ascontiguousarray(cont_data, dtype=np.float64)
+    nan_value = float(nan_value)
+
+    _check_covariate_indices(covars_categorical, cat_data.shape[0], 'covars_categorical')
+    _check_covariate_indices(covars_continuous, cont_data.shape[0], 'covars_continuous')
+
+    # P-value corrections are computed in python from the unadjusted P-values.
+    return_types_mod = {x for x in return_types if not x.startswith('p_')}
+    if any(x.startswith('p_') for x in return_types):
+        return_types_mod.add('p_unadjusted')
+
+    # Set number of desired threads for computation.
+    set_num_threads(threads)
+    cat_data_mat = DataMatrix(cat_data)
+    cont_data_mat = DataMatrix(cont_data)
+    result_dict = linear_regression_with_nans(cat_data_mat, cont_data_mat, covars_categorical,
+                                                      covars_continuous, nan_value, return_types_mod)
+
+    output_dic = dict()
+    for name in ['F', 'np2', 'cohens_f2', 'beta', 'std_beta']:
+        if name in return_types:
+            output_dic[name] = np.array(result_dict[name], copy=False)
+
+    if 'p_unadjusted' in result_dict:
+        # Clip values to range 0 and 1 (rounding errors).
+        pvalue_mat = np.clip(np.array(result_dict['p_unadjusted'], copy=False), a_min=0.0, a_max=1.0)
+        num_cat = cat_data.shape[0]
+
+        if 'p_bonferroni' in return_types:
+            output_dic['p_bonferroni'] = _adjust_pvalues_linear_regression(pvalue_mat, num_cat, 'bonferroni')
+
+        if 'p_benjamini_hb' in return_types:
+            output_dic['p_benjamini_hb'] = _adjust_pvalues_linear_regression(pvalue_mat, num_cat, 'bh')
+
+        if 'p_benjamini_yek' in return_types:
+            output_dic['p_benjamini_yek'] = _adjust_pvalues_linear_regression(pvalue_mat, num_cat, 'by')
+
+        if 'p_unadjusted' in return_types:
+            output_dic['p_unadjusted'] = pvalue_mat
 
     return output_dic

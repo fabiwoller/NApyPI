@@ -1,0 +1,241 @@
+/**
+ * @file core/data/load_impl.hpp
+ * @author Ryan Curtin
+ * @author Omar Shrit
+ * @author Gopi Tatiraju
+ *
+ * Implementation of templatized load() function defined in load.hpp.
+ *
+ * mlpack is free software; you may redistribute it and/or modify it under the
+ * terms of the 3-clause BSD license.  You should have received a copy of the
+ * 3-clause BSD license along with mlpack.  If not, see
+ * http://www.opensource.org/licenses/BSD-3-Clause for more information.
+ */
+#ifndef MLPACK_CORE_DATA_LOAD_IMPL_HPP
+#define MLPACK_CORE_DATA_LOAD_IMPL_HPP
+
+// In case it hasn't already been included.
+#include "load.hpp"
+
+namespace mlpack {
+
+template<typename MatType, typename DataOptionsType>
+bool Load(const std::string& filename,
+          MatType& matrix,
+          const DataOptionsType& opts,
+          const typename std::enable_if_t<
+              IsDataOptions<DataOptionsType>::value>*)
+{
+  DataOptionsType tmpOpts(opts);
+  return Load(filename, matrix, tmpOpts, false);
+}
+
+template<typename eT, typename DataOptionsType>
+bool Load(const std::vector<std::string>& files,
+          arma::Mat<eT>& matrix,
+          const DataOptionsType& opts,
+          const typename std::enable_if_t<
+              IsDataOptions<DataOptionsType>::value>*)
+{
+  DataOptionsType tmpOpts(opts);
+  return Load(files, matrix, tmpOpts, false);
+}
+
+// We need to change filename to src and matrix to dest
+// src could be a link to URL, filename, any place where the data can be
+// dest, usually matrix, or something else.
+template<typename ObjectType, typename DataOptionsType>
+bool Load(const std::string& src,
+          ObjectType& dest,
+          DataOptionsType& opts,
+          const bool copyBack,
+          const typename std::enable_if_t<
+              IsDataOptions<DataOptionsType>::value>*)
+{
+  Timer::Start("loading_data");
+
+  static_assert(!IsArma<ObjectType>::value || !IsSparseMat<ObjectType>::value
+      || !HasSerialize<ObjectType>::value, "mlpack can load Armadillo"
+      " matrices or serialized mlpack models only; please use a known type.");
+  const bool isMatrixType = IsArma<ObjectType>::value ||
+      IsSparseMat<ObjectType>::value;
+  const bool isSerializable = HasSerialize<ObjectType>::value;
+  const bool isSparseMatrixType = IsSparseMat<ObjectType>::value;
+
+  std::fstream stream;
+  std::string filename;
+  bool success = false;
+
+  if (CheckIfURL(src))
+  {
+    // #ifdef to be changed to ifndef MLPACK_DISABLE_HTTPLIB the end of
+    // the integration.
+#ifdef MLPACK_ENABLE_HTTPLIB
+    success = DownloadFile(src, filename);
+    if (!success)
+    {
+      Timer::Stop("loading_data");
+      return HandleError("Cannot download the dataset from the provided link. "
+          "Please check the link or the data format.", opts);
+    }
+#else
+    return HandleError("HTTPLIB support is disabled, please define "
+        "MLPACK_ENABLE_HTTPLIB, to download dataset as URL.", opts);
+#endif
+  }
+  else
+  {
+    filename = src;
+  }
+
+  success = OpenFile(filename, opts, true, stream);
+  if (!success)
+  {
+    Timer::Stop("loading_data");
+    return false;
+  }
+
+  success = DetectFileType<ObjectType>(filename, opts, true, &stream);
+  if (!success)
+  {
+    Timer::Stop("loading_data");
+    return false;
+  }
+  const bool isAudioFormat = opts.Format() == FileType::WAV ||
+      opts.Format() == FileType::MP3;
+  const bool isImageFormat = (opts.Format() == FileType::PNG ||
+      opts.Format() == FileType::JPG || opts.Format() == FileType::PNM ||
+      opts.Format() == FileType::BMP || opts.Format() == FileType::GIF ||
+      opts.Format() == FileType::PSD || opts.Format() == FileType::TGA ||
+      opts.Format() == FileType::PIC || opts.Format() == FileType::ImageType);
+
+  if constexpr (isMatrixType)
+  {
+    if (isImageFormat)
+    {
+      if constexpr (isSparseMatrixType)
+      {
+        // Assuming dest is a sparse matrix.
+        arma::Mat<typename ObjectType::elem_type> tmp;
+        ImageOptions imgOpts(std::move(opts));
+        std::vector<std::string> files;
+        files.push_back(filename);
+        success = LoadImage(files, tmp, imgOpts);
+        if (copyBack)
+          opts = std::move(imgOpts);
+
+        dest = arma::conv_to<ObjectType>::from(tmp);
+      }
+      else
+      {
+        ImageOptions imgOpts(std::move(opts));
+        std::vector<std::string> files;
+        files.push_back(filename);
+        success = LoadImage(files, dest, imgOpts);
+        if (copyBack)
+          opts = std::move(imgOpts);
+      }
+    }
+    else if (isAudioFormat)
+    {
+      if constexpr (isSparseMatrixType)
+      {
+        // Assuming dest is a sparse matrix.
+        arma::Mat<typename ObjectType::elem_type> tmp;
+        AudioOptions audOpts(std::move(opts));
+        success = LoadAudio(src, tmp, audOpts);
+        if (copyBack)
+          opts = std::move(audOpts);
+
+        dest = arma::conv_to<ObjectType>::from(tmp);
+      }
+      else
+      {
+        AudioOptions audOpts(std::move(opts));
+        success = LoadAudio(src, dest, audOpts);
+        if (copyBack)
+          opts = std::move(audOpts);
+      }
+    }
+    else
+    {
+      TextOptions txtOpts(std::move(opts));
+      success = LoadNumeric(filename, dest, stream, txtOpts);
+      if (copyBack)
+        opts = std::move(txtOpts);
+    }
+  }
+  else if constexpr (isSerializable)
+  {
+    success = LoadModel(dest, opts, stream);
+  }
+  else
+  {
+    return HandleError("DataOptionsType is unknown!  Please use a known type "
+        "or provide specific overloads.", opts);
+  }
+
+  if (!success)
+  {
+    Timer::Stop("loading_data");
+    std::stringstream oss;
+    oss << "Loading from '" << filename << "' failed.";
+    return HandleError(oss, opts);
+  }
+  else
+  {
+    if constexpr (IsArma<ObjectType>::value)
+    {
+      Log::Info << "Size is " << dest.n_rows << " x "
+          << dest.n_cols << ".\n";
+    }
+  }
+
+  Timer::Stop("loading_data");
+
+  return success;
+}
+
+template<typename eT, typename DataOptionsType>
+bool Load(const std::vector<std::string>& files,
+          arma::Mat<eT>& matrix,
+          DataOptionsType& opts,
+          const bool copyBack,
+          const typename std::enable_if_t<
+              IsDataOptions<DataOptionsType>::value>*)
+{
+  bool success = false;
+  if (files.empty())
+  {
+    return HandleError("Load(): given set of filenames is empty;"
+        " loading failed.", opts);
+  }
+
+  DetectFromExtension<arma::Mat<eT>>(files.back(), opts);
+
+  const bool isImageFormat = (opts.Format() == FileType::PNG ||
+      opts.Format() == FileType::JPG || opts.Format() == FileType::PNM ||
+      opts.Format() == FileType::BMP || opts.Format() == FileType::GIF ||
+      opts.Format() == FileType::PSD || opts.Format() == FileType::TGA ||
+      opts.Format() == FileType::PIC || opts.Format() == FileType::ImageType);
+
+  if (isImageFormat)
+  {
+    ImageOptions imgOpts(std::move(opts));
+    success = LoadImage(files, matrix, imgOpts);
+    if (copyBack)
+      opts = std::move(imgOpts);
+  }
+  else
+  {
+    TextOptions txtOpts(std::move(opts));
+    success = LoadNumericMultifile(files, matrix, txtOpts);
+    if (copyBack)
+      opts = std::move(txtOpts);
+  }
+  return success;
+}
+
+} // namespace mlpack
+
+#endif

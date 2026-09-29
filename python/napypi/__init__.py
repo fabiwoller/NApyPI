@@ -1,4 +1,5 @@
-from .wrapper import pearsonr, spearmanr, chi_squared, anova, partial_correlation
+from .wrapper import pearsonr, spearmanr, chi_squared, anova, partial_correlation, multinomial_regression
+from .wrapper import logistic_regression, linear_regression
 from .wrapper import kruskal_wallis, ttest, mwu, _adjust_pvalues_bonferroni, _adjust_pvalues_fdr_control
 from importlib.metadata import version, PackageNotFoundError
 
@@ -11,7 +12,10 @@ __all__ = ["pearsonr",
            "mwu", 
            "_adjust_pvalues_bonferroni",
            "_adjust_pvalues_fdr_control",
-           "partial_correlation"]
+           "partial_correlation",
+           "multinomial_regression",
+           "logistic_regression",
+           "linear_regression"]
 
 try:
     __version__ = version("napypi")

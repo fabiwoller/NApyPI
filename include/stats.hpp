@@ -62,4 +62,20 @@ namespace statistics
         double na_value,
         const std::string& method);
 
+    // NAN-aware multinomial logistic regression test. Also used for binary logistic regression.
+    std::pair<DataMatrix, DataMatrix> multinomial_regression_test_with_nans(
+        const DataMatrix& cat_data,
+        const DataMatrix& comb_data,
+        const std::vector<int>& control_rows_categorical,
+        const std::vector<int>& control_rows_continuous,
+        double na_value);
+
+    // NAN-aware linear regression with partial F-test and effect sizes.
+    std::map<std::string, DataMatrix> linear_regression_with_nans(
+        const DataMatrix& cat_data,
+        const DataMatrix& cont_data,
+        const std::vector<int>& control_rows_categorical,
+        const std::vector<int>& control_rows_continuous,
+        double na_value,
+        const std::set<std::string>& return_types);
 }
