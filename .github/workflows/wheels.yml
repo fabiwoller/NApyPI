@@ -43,14 +43,22 @@ jobs:
             delocate-wheel --require-archs {delocate_archs} -w {dest_dir} {wheel}
 
           # --- WINDOWS SETUP ---
-          # Install OpenBLAS on Windows via vcpkg. OpenBLAS also supplies LAPACK, so
-          # BLA_VENDOR steers find_package(LAPACK) at it instead of looking for a
-          # separate reference LAPACK (which vcpkg cannot build without Fortran).
-          CIBW_BEFORE_ALL_WINDOWS: "vcpkg install openblas:x64-windows"
+          # vcpkg's openblas port is built without a Fortran compiler, so it ships BLAS
+          # plus only a small C-translated LAPACK subset: find_package(LAPACK) fails its
+          # cheev_ probe. The lapack metaport layers reference LAPACK (built through
+          # vcpkg-gfortran) on top of OpenBLAS, which is what Armadillo needs since its
+          # vendored config.hpp enables ARMA_USE_LAPACK.
+          #
+          # Deliberately no CMAKE_PREFIX_PATH: pointing it at the vcpkg tree makes plain
+          # find_library resolve debug/lib ahead of the release library. The vcpkg
+          # toolchain already selects the right one from CMAKE_BUILD_TYPE.
+          #
+          # Deliberately no BLA_VENDOR=OpenBLAS: reference LAPACK is a separate library
+          # from OpenBLAS, so pinning the vendor sends find_package(LAPACK) back to
+          # probing openblas.lib for cheev_ and it fails the same way.
+          CIBW_BEFORE_ALL_WINDOWS: "vcpkg install openblas:x64-windows lapack:x64-windows"
           CIBW_ENVIRONMENT_WINDOWS: >
             CMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
-            CMAKE_PREFIX_PATH=C:/vcpkg/installed/x64-windows
-            CMAKE_ARGS="-DBLA_VENDOR=OpenBLAS"
 
           # cibuildwheel does not repair Windows wheels by default, so the OpenBLAS DLL
           # that _core links against would not be vendored into the wheel and `import
