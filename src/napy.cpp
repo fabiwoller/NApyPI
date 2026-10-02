@@ -63,7 +63,9 @@ PYBIND11_MODULE(_core, m){
     m.def("t_test_with_nans", &statistics::ttest, "Compute pairwise t-tests for all combations for binary and continuous data.");
     m.def("mwu_with_nans", &statistics::mwu_with_nans, "Compute pairwise MWU tests for all combinations of binary and continuous data.");
     m.def("partial_correlation_with_nans", &statistics::partial_correlation_with_nans, "Compute pairwise partial correlation for all rows in DataMatrix.");
-   
+    m.def("multinomial_regression_test_with_nans", &statistics::multinomial_regression_test_with_nans, "Compute pairwise multinomial logistic regression tests for all combinations of categorical and continuous data.");
+    m.def("linear_regression_with_nans", &statistics::linear_regression_with_nans, "Compute pairwise linear regression effect sizes and partial F-tests for continuous dependent variables against categorical and continuous predictors.");
+
     //********* Add OMP functionality. *********//
 	m.def("get_max_threads", &omp_get_max_threads, "Returns max number of threads");
 	m.def("get_num_threads", &omp_get_num_threads, "Returns number active threads");

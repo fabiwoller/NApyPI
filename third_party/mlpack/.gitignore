@@ -1,0 +1,18 @@
+build*/
+xcode*
+.DS_Store
+.vscode
+.idea
+cmake-build-*
+*.pyc
+Testing/
+*.swp
+*.swo
+*~
+local/
+local-*
+.editorconfig
+# three files from GNU global
+GPATH
+GRTAGS
+GTAGS

@@ -3,6 +3,9 @@ import numpy as np
 import scipy as sc
 import pandas as pd
 import pingouin as pg
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+from statsmodels.stats.multitest import multipletests
 import unittest
 import rpy2.robjects as robjects
 import rpy2.robjects.numpy2ri as numpy2ri
@@ -1576,6 +1579,562 @@ class TestPartialCorrelation(unittest.TestCase):
         napy_pvals_par = out_dict_par['p_unadjusted']
         np.testing.assert_equal(napy_corr.tolist(), napy_corr_par.tolist())
         np.testing.assert_equal(napy_pvals.tolist(), napy_pvals_par.tolist())
+
+
+class TestLogisticRegression(unittest.TestCase):
+    def test_basic(self):
+        """Test basic functionality of logistic regression.
+        """
+        # Enough samples such that the classes are not perfectly separable and the maximum likelihood estimate exists.
+        np.random.seed(0)
+        n_samples = 40
+        cat_data = np.random.randint(0, 2, (2, n_samples))
+        cont_data = np.random.normal(0, 1, (2, n_samples))
+        nan_value = -999
+
+        # Statsmodels logistic regression for likelihood ratio test.
+        X_reduced = np.column_stack((cont_data[0], cont_data[1]))
+        X_reduced = sm.add_constant(X_reduced)
+
+        model_reduced = sm.Logit(cat_data[0], X_reduced).fit(disp=0)
+        ll_reduced = model_reduced.llf
+
+        X_full = np.column_stack((cat_data[1], cont_data[0], cont_data[1]))
+        X_full = sm.add_constant(X_full)
+
+        model_full = sm.Logit(cat_data[0], X_full).fit(disp=0)
+        ll_full = model_full.llf
+
+        # Reference values are only meaningful if statsmodels found the maximum likelihood estimate.
+        self.assertTrue(model_reduced.mle_retvals['converged'])
+        self.assertTrue(model_full.mle_retvals['converged'])
+
+        sm_lr_statistic = 2 * (ll_full - ll_reduced)
+        df = 1
+        sm_p_value = 1 - sc.stats.chi2.cdf(sm_lr_statistic, df)
+
+        out_dict = napy.logistic_regression(cat_data, cont_data, covars_categorical=[], covars_continuous=[0, 1], return_types=['LR_statistic', 'p_unadjusted'], nan_value=nan_value)
+        napy_statistic = out_dict['LR_statistic'][0][1]
+        napy_p_value = out_dict['p_unadjusted'][0][1]
+
+        self.assertAlmostEqual(napy_statistic, sm_lr_statistic)
+        self.assertAlmostEqual(napy_p_value, sm_p_value)
+
+
+
+    def test_large(self):
+        """Test logistic regression on larger data.
+        """
+        np.random.seed(0)
+        n_samples = 1000
+        control_cont = np.random.normal(0, 1, n_samples)
+        control_cat = np.random.randint(0, 2, n_samples)
+        independent_var = np.random.normal(0, 1, n_samples)
+        logits = 0.5 * control_cont + 1.2 * control_cat + 0.8 * independent_var
+        probs = 1 / (1 + np.exp(-logits))
+        dependent_var = np.random.binomial(1, probs)
+
+        # Statsmodels logistic regression for likelihood ratio test.
+        X_reduced = np.column_stack((control_cont, control_cat))
+        X_reduced = sm.add_constant(X_reduced)
+
+        model_reduced = sm.Logit(dependent_var, X_reduced).fit(disp=0)
+        ll_reduced = model_reduced.llf
+
+        X_full = np.column_stack((independent_var, control_cont, control_cat))
+        X_full = sm.add_constant(X_full)
+
+        model_full = sm.Logit(dependent_var, X_full).fit(disp=0)
+        ll_full = model_full.llf
+
+        sm_lr_statistic = 2 * (ll_full - ll_reduced)
+        df = 1
+        sm_p_value = 1 - sc.stats.chi2.cdf(sm_lr_statistic, df)
+
+        # Napy logistic regression.
+        cat_data = np.stack((dependent_var, control_cat))
+        # print("cat data for napy:", cat_data)
+        cont_data = np.stack((independent_var, control_cont))
+        # print("cont data for napy:", cont_data)
+        out_dict = napy.logistic_regression(cat_data, cont_data, covars_categorical=[1], covars_continuous=[1], return_types=['LR_statistic', 'p_unadjusted'], nan_value=-999)
+        napy_statistic = out_dict['LR_statistic'][0][2]
+        napy_p_value = out_dict['p_unadjusted'][0][2]
+
+        self.assertAlmostEqual(napy_statistic, sm_lr_statistic)
+        self.assertAlmostEqual(napy_p_value, sm_p_value)
+
+    def _statsmodels_lr_test(self, dependent_var, predictor_columns, covariate_columns):
+        """Likelihood-ratio test of statsmodels logistic regression for adding the predictor columns to the covariates.
+        """
+        intercept = [np.ones(len(dependent_var))]
+        X_reduced = np.column_stack(intercept + covariate_columns)
+        X_full = np.column_stack(intercept + covariate_columns + predictor_columns)
+        model_reduced = sm.Logit(dependent_var, X_reduced).fit(disp=0)
+        model_full = sm.Logit(dependent_var, X_full).fit(disp=0)
+        # Reference values are only meaningful if statsmodels found the maximum likelihood estimate.
+        self.assertTrue(model_reduced.mle_retvals['converged'])
+        self.assertTrue(model_full.mle_retvals['converged'])
+        sm_lr_statistic = 2 * (model_full.llf - model_reduced.llf)
+        sm_p_value = sc.stats.chi2.sf(sm_lr_statistic, len(predictor_columns))
+        return sm_lr_statistic, sm_p_value
+
+    def test_nans(self):
+        """Test that full and reduced model are fitted on the same samples if only the predictor has missing values.
+        """
+        np.random.seed(1)
+        n_samples = 200
+        nan_value = -999
+        control_cont = np.random.normal(0, 1, n_samples)
+        independent_var = np.random.normal(0, 1, n_samples)
+        probs = 1 / (1 + np.exp(-(0.5 * control_cont + 0.8 * independent_var)))
+        dependent_var = np.random.binomial(1, probs)
+        independent_var[np.random.rand(n_samples) < 0.2] = nan_value
+
+        complete = independent_var != nan_value
+        sm_lr_statistic, sm_p_value = self._statsmodels_lr_test(dependent_var[complete], [independent_var[complete]],
+                                                                [control_cont[complete]])
+
+        cat_data = np.array([dependent_var])
+        cont_data = np.stack((independent_var, control_cont))
+        out_dict = napy.logistic_regression(cat_data, cont_data, covars_continuous=[1], nan_value=nan_value)
+        self.assertAlmostEqual(out_dict['LR_statistic'][0][1], sm_lr_statistic)
+        self.assertAlmostEqual(out_dict['p_unadjusted'][0][1], sm_p_value)
+
+    def test_categorical_covariate(self):
+        """Test that a covariate with three categories is dummy-encoded.
+        """
+        np.random.seed(2)
+        n_samples = 200
+        control_cat = np.random.randint(0, 3, n_samples)
+        control_cat_dummies = pd.get_dummies(control_cat, drop_first=True, dtype=float).values
+        independent_var = np.random.normal(0, 1, n_samples)
+        logits = 1.2 * control_cat_dummies[:, 0] - 0.8 * control_cat_dummies[:, 1] + 0.6 * independent_var
+        dependent_var = np.random.binomial(1, 1 / (1 + np.exp(-logits)))
+
+        sm_lr_statistic, sm_p_value = self._statsmodels_lr_test(dependent_var, [independent_var],
+                                                                [control_cat_dummies[:, 0], control_cat_dummies[:, 1]])
+
+        cat_data = np.stack((dependent_var, control_cat))
+        cont_data = np.array([independent_var])
+        out_dict = napy.logistic_regression(cat_data, cont_data, covars_categorical=[1])
+        self.assertAlmostEqual(out_dict['LR_statistic'][0][2], sm_lr_statistic)
+        self.assertAlmostEqual(out_dict['p_unadjusted'][0][2], sm_p_value)
+
+    def test_categorical_predictor(self):
+        """Test predictor with three categories, which has two degrees of freedom.
+        """
+        np.random.seed(3)
+        n_samples = 200
+        control_cont = np.random.normal(0, 1, n_samples)
+        independent_var = np.random.randint(0, 3, n_samples)
+        independent_dummies = pd.get_dummies(independent_var, drop_first=True, dtype=float).values
+        logits = 0.4 * control_cont + 0.9 * independent_dummies[:, 0] - 0.5 * independent_dummies[:, 1]
+        dependent_var = np.random.binomial(1, 1 / (1 + np.exp(-logits)))
+
+        sm_lr_statistic, sm_p_value = self._statsmodels_lr_test(dependent_var,
+                                                                [independent_dummies[:, 0], independent_dummies[:, 1]],
+                                                                [control_cont])
+
+        cat_data = np.stack((dependent_var, independent_var))
+        cont_data = np.array([control_cont])
+        out_dict = napy.logistic_regression(cat_data, cont_data, covars_continuous=[0])
+        self.assertAlmostEqual(out_dict['LR_statistic'][0][1], sm_lr_statistic)
+        self.assertAlmostEqual(out_dict['p_unadjusted'][0][1], sm_p_value)
+        # Categorical variable with three categories is no binary dependent variable.
+        self.assertTrue(np.all(np.isnan(out_dict['LR_statistic'][1])))
+        self.assertTrue(np.all(np.isnan(out_dict['p_unadjusted'][1])))
+
+    def test_binary_coding(self):
+        """Test that binary variables do not need to be encoded as 0 and 1.
+        """
+        np.random.seed(4)
+        cat_data = np.random.randint(0, 2, (2, 100))
+        cont_data = np.random.normal(0, 1, (2, 100))
+        out_dict = napy.logistic_regression(cat_data, cont_data, covars_continuous=[1])
+        out_dict_recoded = napy.logistic_regression(cat_data + 1, cont_data, covars_continuous=[1])
+        np.testing.assert_allclose(out_dict['LR_statistic'], out_dict_recoded['LR_statistic'], equal_nan=True)
+        np.testing.assert_allclose(out_dict['p_unadjusted'], out_dict_recoded['p_unadjusted'], equal_nan=True)
+
+    def test_no_covariates(self):
+        """Test logistic regression without covariates, where the reduced model only has an intercept.
+        """
+        np.random.seed(7)
+        cat_data = np.random.randint(0, 2, (1, 100))
+        cont_data = np.random.normal(0, 1, (1, 100))
+        cont_data[0] += 0.5 * cat_data[0]
+        sm_lr_statistic, sm_p_value = self._statsmodels_lr_test(cat_data[0], [cont_data[0]], [])
+        out_dict = napy.logistic_regression(cat_data, cont_data)
+        self.assertAlmostEqual(out_dict['LR_statistic'][0][1], sm_lr_statistic)
+        self.assertAlmostEqual(out_dict['p_unadjusted'][0][1], sm_p_value)
+
+    def test_self_regression(self):
+        """Test that regressions of a variable on itself are NA.
+        """
+        np.random.seed(5)
+        cat_data = np.random.randint(0, 2, (3, 50))
+        cont_data = np.random.normal(0, 1, (1, 50))
+        out_dict = napy.logistic_regression(cat_data, cont_data)
+        for i in range(3):
+            self.assertTrue(np.isnan(out_dict['LR_statistic'][i][i]))
+            self.assertTrue(np.isnan(out_dict['p_unadjusted'][i][i]))
+
+    def test_multiple_testing_correction(self):
+        """Test multiple testing correction against statsmodels, where each pair of variables is a separate test.
+        """
+        np.random.seed(6)
+        cat_data = np.random.randint(0, 2, (3, 100))
+        cont_data = np.random.normal(0, 1, (2, 100))
+        out_dict = napy.logistic_regression(cat_data, cont_data, covars_continuous=[1])
+        pvalues = out_dict['p_unadjusted']
+        mask = ~np.isnan(pvalues)
+        for napy_key, sm_method in [('p_bonferroni', 'bonferroni'), ('p_benjamini_hb', 'fdr_bh'),
+                                    ('p_benjamini_yek', 'fdr_by')]:
+            sm_corrected = multipletests(pvalues[mask], method=sm_method)[1]
+            np.testing.assert_allclose(out_dict[napy_key][mask], sm_corrected)
+            self.assertTrue(np.all(np.isnan(out_dict[napy_key][~mask])))
+
+
+class TestMultinomialLogisticRegression(unittest.TestCase):
+    def test_basic(self):
+        """Test basic functionality of multinomial logistic regression with three classes.
+        """
+        # Enough samples such that the classes are not perfectly separable and the maximum likelihood estimate exists.
+        np.random.seed(1)
+        n_samples = 40
+        cat_data = np.stack((np.random.randint(0, 3, n_samples), np.random.randint(0, 2, n_samples)))
+        cont_data = np.random.normal(0, 1, (2, n_samples))
+        nan_value = -999
+
+        # Statsmodels multinomial logistic regression for likelihood ratio test.
+        X_reduced = np.column_stack((cont_data[0], cont_data[1]))
+        X_reduced = sm.add_constant(X_reduced)
+
+        model_reduced = sm.MNLogit(cat_data[0], X_reduced).fit(disp=0)
+        ll_reduced = model_reduced.llf
+
+        X_full = np.column_stack((cat_data[1], cont_data[0], cont_data[1]))
+        X_full = sm.add_constant(X_full)
+
+        model_full = sm.MNLogit(cat_data[0], X_full).fit(disp=0)
+        ll_full = model_full.llf
+
+        # Reference values are only meaningful if statsmodels found the maximum likelihood estimate.
+        self.assertTrue(model_reduced.mle_retvals['converged'])
+        self.assertTrue(model_full.mle_retvals['converged'])
+
+        sm_lr_statistic = 2 * (ll_full - ll_reduced)
+        df = 2
+        sm_p_value = 1 - sc.stats.chi2.cdf(sm_lr_statistic, df)
+
+        out_dict = napy.multinomial_regression(cat_data, cont_data, covars_categorical=[], covars_continuous=[0, 1], return_types=['LR_statistic', 'p_unadjusted'], nan_value=nan_value)
+        napy_statistic = out_dict['LR_statistic'][0][1]
+        napy_p_value = out_dict['p_unadjusted'][0][1]
+
+        self.assertAlmostEqual(napy_statistic, sm_lr_statistic)
+        self.assertAlmostEqual(napy_p_value, sm_p_value)
+
+    def test_large(self):
+        """Test multinomial logistic regression on larger data.
+        """
+        np.random.seed(0)
+        n_samples = 11
+        control_cont = np.random.normal(0, 1, n_samples)
+        independent_var = np.random.normal(0, 1, n_samples)
+
+        # 1. Generate a control variable with 3 categories (0, 1, or 2)
+        control_cat_raw = np.random.randint(0, 3, n_samples)
+
+        # 2. One-hot encode the categories into dummy variables (0 or 1)
+        # drop_first=True avoids the "dummy variable trap" by using Category 0 as the baseline.
+        control_cat_dummies = pd.get_dummies(control_cat_raw, drop_first=True, dtype=float).values
+        # control_cat_dummies now has 2 columns: one for Category 1, one for Category 2
+
+        # 3. Define unique effects (coefficients) for each category level
+        # Category 0 (baseline): effect is 0
+        # Category 1: effect is 1.2
+        # Category 2: effect is -0.5
+        logits = (
+            0.5 * control_cont 
+            + 1.2 * control_cat_dummies[:, 0]   # Effect of Category 1
+            + (-0.5) * control_cat_dummies[:, 1] # Effect of Category 2
+            + 0.8 * independent_var
+        )
+
+        probs = 1 / (1 + np.exp(-logits))
+        dependent_var = np.random.binomial(1, probs)
+
+        # 4. Fitting the Reduced Model (Includes continuous control + both dummy columns)
+        X_reduced = np.column_stack((control_cont, control_cat_dummies))
+        X_reduced = sm.add_constant(X_reduced)
+
+        model_reduced = sm.Logit(dependent_var, X_reduced).fit(disp=0)
+        ll_reduced = model_reduced.llf
+
+        # 5. Fitting the Full Model (Includes independent variable + all controls)
+        X_full = np.column_stack((independent_var, control_cont, control_cat_dummies))
+        X_full = sm.add_constant(X_full)
+
+        model_full = sm.Logit(dependent_var, X_full).fit(disp=0)
+        ll_full = model_full.llf
+
+        # Reference values are only meaningful if statsmodels found the maximum likelihood estimate.
+        self.assertTrue(model_reduced.mle_retvals['converged'])
+        self.assertTrue(model_full.mle_retvals['converged'])
+
+        sm_lr_statistic = 2 * (ll_full - ll_reduced)
+        df = 1
+        sm_p_value = 1 - sc.stats.chi2.cdf(sm_lr_statistic, df)
+
+        # Napy multinomial logistic regression.
+        cat_data = np.stack((dependent_var, control_cat_raw))
+        cont_data = np.stack((independent_var, control_cont))
+        out_dict = napy.multinomial_regression(cat_data, cont_data, covars_categorical=[1], covars_continuous=[1], return_types=['LR_statistic', 'p_unadjusted'], nan_value=-999)
+        napy_statistic = out_dict['LR_statistic'][0][2]
+        napy_p_value = out_dict['p_unadjusted'][0][2]
+
+        self.assertAlmostEqual(napy_statistic, sm_lr_statistic)
+        self.assertAlmostEqual(napy_p_value, sm_p_value)
+
+
+class TestLinearRegression(unittest.TestCase):
+
+    def _statsmodels_linear_regression(self, y, x, x_categorical, cat_covars=[], cont_covars=[], nan_value=-999):
+        """Fit y ~ covariates + x with statsmodels on complete cases and return the Type-II F-test and effect sizes of x.
+        """
+        data = pd.DataFrame({'y': y, 'x': x})
+        terms = []
+        for i, covar in enumerate(cat_covars):
+            data[f'c{i}'] = covar
+            terms.append(f'C(c{i})')
+        for i, covar in enumerate(cont_covars):
+            data[f'z{i}'] = covar
+            terms.append(f'z{i}')
+        data = data.replace(nan_value, np.nan).dropna().reset_index(drop=True)
+
+        x_term = 'C(x)' if x_categorical else 'x'
+        model = smf.ols('y ~ ' + ' + '.join(terms + [x_term]), data=data).fit()
+        anova_table = sm.stats.anova_lm(model, typ=2)
+        ss_x = anova_table.loc[x_term, 'sum_sq']
+        ss_residual = anova_table.loc['Residual', 'sum_sq']
+        result = {'F': anova_table.loc[x_term, 'F'], 'p_unadjusted': anova_table.loc[x_term, 'PR(>F)'],
+                  'np2': ss_x / (ss_x + ss_residual), 'cohens_f2': ss_x / ss_residual}
+
+        x_params = [name for name in model.params.index if name == 'x' or name.startswith('C(x)')]
+        if len(x_params) == 1:
+            result['beta'] = model.params[x_params[0]]
+            # Standardized coefficient from regression on z-scored dependent variable and predictor.
+            x_column = model.model.exog[:, model.model.exog_names.index(x_params[0])]
+            std_data = data.copy()
+            std_data['y'] = sc.stats.zscore(data['y'])
+            std_data['x'] = sc.stats.zscore(x_column)
+            std_model = smf.ols('y ~ ' + ' + '.join(terms + ['x']), data=std_data).fit()
+            result['std_beta'] = std_model.params['x']
+        return result
+
+    def _assert_matches_reference(self, out_dict, row, col, reference):
+        for key, value in reference.items():
+            self.assertAlmostEqual(out_dict[key][row, col], value, msg=f"{key} at ({row}, {col})")
+        if 'beta' not in reference:
+            self.assertTrue(np.isnan(out_dict['beta'][row, col]))
+            self.assertTrue(np.isnan(out_dict['std_beta'][row, col]))
+
+    def test_basic(self):
+        """Test continuous predictor with categorical and continuous covariates against statsmodels.
+        """
+        cat_data = np.array([[0, 1, 0, 1, 1, 0, 1, 0, 0, 1]])
+        cont_data = np.array([[2.1, 3.4, 1.9, 4.8, 5.2, 3.3, 6.1, 4.4, 2.7, 5.0],
+                              [1.0, 2.0, 1.5, 3.0, 3.5, 2.0, 4.0, 3.2, 1.2, 2.9],
+                              [0.5, 0.1, 0.9, 0.4, 0.2, 0.8, 0.3, 0.6, 0.7, 0.2]])
+        out_dict = napy.linear_regression(cat_data, cont_data, covars_categorical=[0], covars_continuous=[2])
+        reference = self._statsmodels_linear_regression(cont_data[0], cont_data[1], x_categorical=False,
+                                                        cat_covars=[cat_data[0]], cont_covars=[cont_data[2]])
+        self._assert_matches_reference(out_dict, 0, 2, reference)
+
+    def test_categorical_predictor(self):
+        """Test categorical predictor with three categories against statsmodels.
+        """
+        cat_data = np.array([[0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2],
+                             [0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0]])
+        cont_data = np.array([[3.1, 4.5, 6.2, 2.8, 5.1, 6.9, 3.5, 4.2, 5.8, 2.5, 4.9, 6.4],
+                              [1.2, 0.8, 1.5, 0.9, 1.1, 1.7, 1.0, 0.6, 1.3, 0.7, 1.4, 1.6]])
+        out_dict = napy.linear_regression(cat_data, cont_data, covars_categorical=[1], covars_continuous=[1])
+        reference = self._statsmodels_linear_regression(cont_data[0], cat_data[0], x_categorical=True,
+                                                        cat_covars=[cat_data[1]], cont_covars=[cont_data[1]])
+        self._assert_matches_reference(out_dict, 0, 0, reference)
+
+    def test_binary_predictor(self):
+        """Test regression coefficients of binary predictor against statsmodels.
+        """
+        cat_data = np.array([[0, 1, 1, 0, 1, 0, 0, 1, 1, 0],
+                             [2, 0, 1, 1, 2, 0, 2, 1, 0, 1]])
+        cont_data = np.array([[1.3, 3.9, 4.2, 2.2, 5.1, 1.1, 2.8, 3.6, 4.4, 1.9],
+                              [0.3, 0.9, 0.2, 0.5, 0.7, 0.1, 0.8, 0.4, 0.6, 0.2]])
+        out_dict = napy.linear_regression(cat_data, cont_data, covars_categorical=[1], covars_continuous=[1])
+        reference = self._statsmodels_linear_regression(cont_data[0], cat_data[0], x_categorical=True,
+                                                        cat_covars=[cat_data[1]], cont_covars=[cont_data[1]])
+        self.assertIn('beta', reference)
+        self._assert_matches_reference(out_dict, 0, 0, reference)
+
+    def test_large(self):
+        """Test all pairs of larger data with NAs against statsmodels.
+        """
+        np.random.seed(0)
+        n_samples = 1000
+        nan_value = -999
+        control_cat = np.random.randint(0, 3, n_samples)
+        control_cont = np.random.normal(0, 1, n_samples)
+        cat_predictor = np.random.randint(0, 4, n_samples)
+        bin_predictor = np.random.randint(0, 2, n_samples)
+        cont_predictor = np.random.normal(0, 1, n_samples) + 0.5 * control_cont
+        dependent = (0.8 * cont_predictor + 0.3 * cat_predictor - 0.5 * bin_predictor + 0.4 * control_cont
+                     + 0.2 * control_cat + np.random.normal(0, 1, n_samples))
+        dependent2 = 0.3 * dependent + np.random.normal(0, 1, n_samples)
+
+        cat_data = np.stack((cat_predictor, bin_predictor, control_cat)).astype(float)
+        cont_data = np.stack((dependent, dependent2, cont_predictor, control_cont))
+        cat_data[np.random.rand(*cat_data.shape) < 0.05] = nan_value
+        cont_data[np.random.rand(*cont_data.shape) < 0.05] = nan_value
+
+        out_dict = napy.linear_regression(cat_data, cont_data, covars_categorical=[2], covars_continuous=[3],
+                                          nan_value=nan_value, threads=4)
+        num_cat = cat_data.shape[0]
+        for dep in range(3):
+            predictors = [(j, cat_data[j], True) for j in range(2)]
+            predictors += [(num_cat + j, cont_data[j], False) for j in range(3) if j != dep]
+            for col, x, x_categorical in predictors:
+                reference = self._statsmodels_linear_regression(cont_data[dep], x, x_categorical,
+                                                                cat_covars=[cat_data[2]], cont_covars=[cont_data[3]],
+                                                                nan_value=nan_value)
+                self._assert_matches_reference(out_dict, dep, col, reference)
+
+    def test_nans(self):
+        """Test that NA removal equals regression on the complete cases.
+        """
+        nan_value = -99
+        cat_data = np.array([[0, 1, 0, nan_value, 1, 0, 1, 0, 0, 1, 1, 0]])
+        cont_data = np.array([[2.1, 3.4, 1.9, 4.8, 5.2, nan_value, 6.1, 4.4, 2.7, 5.0, 4.1, 2.2],
+                              [1.0, 2.0, 1.5, 3.0, 3.5, 2.0, 4.0, 3.2, 1.2, 2.9, nan_value, 1.4],
+                              [0.5, 0.1, 0.9, 0.4, 0.2, 0.8, 0.3, 0.6, 0.7, 0.2, 0.4, 0.8]])
+        out_dict = napy.linear_regression(cat_data, cont_data, covars_categorical=[0], covars_continuous=[2],
+                                          nan_value=nan_value)
+        complete = np.all(cat_data != nan_value, axis=0) & np.all(cont_data != nan_value, axis=0)
+        out_dict_clean = napy.linear_regression(cat_data[:, complete], cont_data[:, complete],
+                                                covars_categorical=[0], covars_continuous=[2])
+        for key in out_dict:
+            np.testing.assert_equal(out_dict[key].tolist(), out_dict_clean[key].tolist())
+        reference = self._statsmodels_linear_regression(cont_data[0], cont_data[1], x_categorical=False,
+                                                        cat_covars=[cat_data[0]], cont_covars=[cont_data[2]],
+                                                        nan_value=nan_value)
+        self._assert_matches_reference(out_dict, 0, 2, reference)
+
+    def test_against_partial_correlation(self):
+        """Test that partial eta squared of continuous predictor equals squared partial correlation of pingouin.
+        """
+        np.random.seed(1)
+        cont_data = np.random.rand(4, 30)
+        cat_data = np.empty((0, 30))
+        out_dict = napy.linear_regression(cat_data, cont_data, covars_continuous=[2, 3])
+        data = pd.DataFrame(cont_data.T, columns=['y', 'x', 'z0', 'z1'])
+        pingouin_corr = pg.partial_corr(data=data, x='x', y='y', covar=['z0', 'z1'])['r'].iloc[0]
+        self.assertAlmostEqual(out_dict['np2'][0, 1], pingouin_corr ** 2)
+
+    def test_no_covariates(self):
+        """Test regression without covariates against scipy's linear regression and one-way ANOVA.
+        """
+        cat_data = np.array([[0, 1, 2, 1, 0, 2, 1, 0]])
+        cont_data = np.array([[4.0, 4.5, 1.2, 2.3, 1.1, 2.9, 3.3, 0.5],
+                              [0.2, 0.4, 1.1, 5.0, 1.3, 5.2, 2.2, 0.9]])
+        out_dict = napy.linear_regression(cat_data, cont_data)
+        scipy_reg = sc.stats.linregress(cont_data[1], cont_data[0])
+        self.assertAlmostEqual(out_dict['beta'][0, 2], scipy_reg.slope)
+        self.assertAlmostEqual(out_dict['p_unadjusted'][0, 2], scipy_reg.pvalue)
+        self.assertAlmostEqual(out_dict['np2'][0, 2], scipy_reg.rvalue ** 2)
+        groups = [cont_data[0][cat_data[0] == level] for level in range(3)]
+        scipy_f, scipy_p = sc.stats.f_oneway(*groups)
+        self.assertAlmostEqual(out_dict['F'][0, 0], scipy_f)
+        self.assertAlmostEqual(out_dict['p_unadjusted'][0, 0], scipy_p)
+
+    def test_covariate_and_self_entries(self):
+        """Test that pairs with covariates and self-regressions are NA.
+        """
+        np.random.seed(2)
+        cat_data = np.random.randint(0, 2, (2, 20))
+        cont_data = np.random.rand(3, 20)
+        out_dict = napy.linear_regression(cat_data, cont_data, covars_categorical=[1], covars_continuous=[2])
+        expected_nan = np.array([[False, True, True, False, True],
+                                 [False, True, False, True, True],
+                                 [True, True, True, True, True]])
+        for matrix in out_dict.values():
+            self.assertEqual(matrix.shape, (3, 5))
+            np.testing.assert_equal(np.isnan(matrix), expected_nan)
+
+    def test_collinear_predictor(self):
+        """Test that predictors collinear with covariates and fully explained dependent variables are NA.
+        """
+        covariate = np.array([0.5, 0.1, 0.9, 0.4, 0.2, 0.8, 0.3, 0.6])
+        cat_data = np.empty((0, 8))
+        cont_data = np.array([[2.1, 3.4, 1.9, 4.8, 5.2, 3.3, 6.1, 4.4],
+                              2 * covariate + 1,
+                              covariate])
+        out_dict = napy.linear_regression(cat_data, cont_data, covars_continuous=[2])
+        for matrix in out_dict.values():
+            self.assertTrue(np.isnan(matrix[0, 1]))
+            self.assertTrue(np.isnan(matrix[1, 0]))
+
+    def test_constant_dependent(self):
+        """Test that a constant dependent variable yields NA.
+        """
+        cat_data = np.array([[0, 1, 0, 1, 1, 0]])
+        cont_data = np.array([[0.1, 0.1, 0.1, 0.1, 0.1, 0.1],
+                              [1.0, 2.0, 1.5, 3.0, 3.5, 2.0]])
+        out_dict = napy.linear_regression(cat_data, cont_data)
+        for matrix in out_dict.values():
+            self.assertTrue(np.isnan(matrix[0, 0]))
+            self.assertTrue(np.isnan(matrix[0, 2]))
+
+    def test_single_category(self):
+        """Test that categorical predictor with only one category after NA removal yields NA.
+        """
+        cat_data = np.array([[0, 1, 0, 0, -99, 0]])
+        cont_data = np.array([[2.1, -99, 1.9, 4.8, 5.2, 3.3]])
+        out_dict = napy.linear_regression(cat_data, cont_data, nan_value=-99)
+        for matrix in out_dict.values():
+            self.assertTrue(np.isnan(matrix[0, 0]))
+
+    def test_too_few_samples(self):
+        """Test that no residual degrees of freedom yield NA.
+        """
+        cat_data = np.array([[0, 1, 2, -99, 1]])
+        cont_data = np.array([[2.1, 3.4, 1.9, 4.8, -99],
+                              [0.5, 0.1, 0.9, 0.4, 0.2]])
+        out_dict = napy.linear_regression(cat_data, cont_data, covars_continuous=[1], nan_value=-99)
+        for matrix in out_dict.values():
+            self.assertTrue(np.isnan(matrix[0, 0]))
+
+    def test_axis(self):
+        """Test axis parameter functionality.
+        """
+        np.random.seed(5)
+        cat_data = np.random.randint(0, 3, (2, 30))
+        cont_data = np.random.rand(3, 30)
+        out_dict = napy.linear_regression(cat_data, cont_data, covars_categorical=[1], covars_continuous=[2], axis=0)
+        out_dict_t = napy.linear_regression(cat_data.T.copy(), cont_data.T.copy(), covars_categorical=[1],
+                                            covars_continuous=[2], axis=1)
+        for key in out_dict:
+            np.testing.assert_equal(out_dict[key].tolist(), out_dict_t[key].tolist())
+
+    def test_parallel(self):
+        """Test parallel functionality.
+        """
+        np.random.seed(6)
+        cat_data = np.random.randint(0, 3, (5, 100))
+        cont_data = np.random.rand(20, 100)
+        out_dict = napy.linear_regression(cat_data, cont_data, covars_categorical=[0], covars_continuous=[0, 1],
+                                          threads=1)
+        out_dict_par = napy.linear_regression(cat_data, cont_data, covars_categorical=[0], covars_continuous=[0, 1],
+                                              threads=4)
+        for key in out_dict:
+            np.testing.assert_equal(out_dict[key].tolist(), out_dict_par[key].tolist())
 
 
 if __name__ == "__main__":
