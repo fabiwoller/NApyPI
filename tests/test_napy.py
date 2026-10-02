@@ -2077,9 +2077,13 @@ class TestLinearRegression(unittest.TestCase):
                               2 * covariate + 1,
                               covariate])
         out_dict = napy.linear_regression(cat_data, cont_data, covars_continuous=[2])
+        n_matrix = out_dict.pop('n')
         for matrix in out_dict.values():
             self.assertTrue(np.isnan(matrix[0, 1]))
             self.assertTrue(np.isnan(matrix[1, 0]))
+        # The pairs are still tested, so the sample size is defined.
+        self.assertEqual(n_matrix[0, 1], 8)
+        self.assertEqual(n_matrix[1, 0], 8)
 
     def test_constant_dependent(self):
         """Test that a constant dependent variable yields NA.
@@ -2088,9 +2092,12 @@ class TestLinearRegression(unittest.TestCase):
         cont_data = np.array([[0.1, 0.1, 0.1, 0.1, 0.1, 0.1],
                               [1.0, 2.0, 1.5, 3.0, 3.5, 2.0]])
         out_dict = napy.linear_regression(cat_data, cont_data)
+        n_matrix = out_dict.pop('n')
         for matrix in out_dict.values():
             self.assertTrue(np.isnan(matrix[0, 0]))
             self.assertTrue(np.isnan(matrix[0, 2]))
+        self.assertEqual(n_matrix[0, 0], 6)
+        self.assertEqual(n_matrix[0, 2], 6)
 
     def test_single_category(self):
         """Test that categorical predictor with only one category after NA removal yields NA.
@@ -2098,8 +2105,10 @@ class TestLinearRegression(unittest.TestCase):
         cat_data = np.array([[0, 1, 0, 0, -99, 0]])
         cont_data = np.array([[2.1, -99, 1.9, 4.8, 5.2, 3.3]])
         out_dict = napy.linear_regression(cat_data, cont_data, nan_value=-99)
+        n_matrix = out_dict.pop('n')
         for matrix in out_dict.values():
             self.assertTrue(np.isnan(matrix[0, 0]))
+        self.assertEqual(n_matrix[0, 0], 4)
 
     def test_too_few_samples(self):
         """Test that no residual degrees of freedom yield NA.
@@ -2108,8 +2117,10 @@ class TestLinearRegression(unittest.TestCase):
         cont_data = np.array([[2.1, 3.4, 1.9, 4.8, -99],
                               [0.5, 0.1, 0.9, 0.4, 0.2]])
         out_dict = napy.linear_regression(cat_data, cont_data, covars_continuous=[1], nan_value=-99)
+        n_matrix = out_dict.pop('n')
         for matrix in out_dict.values():
             self.assertTrue(np.isnan(matrix[0, 0]))
+        self.assertEqual(n_matrix[0, 0], 3)
 
     def test_axis(self):
         """Test axis parameter functionality.
