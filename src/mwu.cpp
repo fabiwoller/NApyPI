@@ -67,8 +67,9 @@ double compute_exact_pvalue(int n, int m, int u)
     return pvalue;
 }
 
+// Stores number of pairwise non-NA samples in num_samples_out.
 std::tuple<double, double, double, double> pairwise_nan_mwu(const DataMatrix& bin_data, int iBin, 
-    const vec2d& rowRanks, double na_value, const std::string& mode)
+    const vec2d& rowRanks, double na_value, const std::string& mode, int& num_samples_out)
 {
     // Compute number of elements per category and rank sums.
     //int numDataPoints = 0;
@@ -127,6 +128,7 @@ std::tuple<double, double, double, double> pairwise_nan_mwu(const DataMatrix& bi
     // Compute U-statistic value.
     const int n1 = groupSizes[0];
     const int n2 = groupSizes[1];
+    num_samples_out = n1 + n2;
     const double R1 = groupRankSums[0];
     const double U1 = n1*n2 + 0.5*n1*(n1+1) - R1;
     const double U2 = n1*n2 - U1;
@@ -202,7 +204,8 @@ std::map<std::string, DataMatrix> statistics::mwu_with_nans(const DataMatrix& bi
     bool compute_u = false;
     bool compute_r = false;
     bool compute_rb = false;
-    DataMatrix pvalues(0,0), u_stat(0,0), r_effect(0,0), rb_effect(0,0);
+    bool compute_n = false;
+    DataMatrix pvalues(0,0), u_stat(0,0), r_effect(0,0), rb_effect(0,0), sample_counts(0,0);
     
     if (return_types.count("p_unadjusted"))
     {
@@ -223,6 +226,11 @@ std::map<std::string, DataMatrix> statistics::mwu_with_nans(const DataMatrix& bi
     {
         rb_effect = DataMatrix(num_bin_variables, num_cont_variables);
         compute_rb = true;
+    }
+    if (return_types.count("n"))
+    {
+        sample_counts = DataMatrix(num_bin_variables, num_cont_variables);
+        compute_n = true;
     }
 
     #pragma omp parallel for 
@@ -270,8 +278,9 @@ std::map<std::string, DataMatrix> statistics::mwu_with_nans(const DataMatrix& bi
 
         for (int iBin = 0; iBin < num_bin_variables; ++iBin)
         {
+            int n = 0;
             std::tuple<double, double, double, double> results = pairwise_nan_mwu(bin_data, 
-                iBin, row_map, na_value, mode);
+                iBin, row_map, na_value, mode, n);
             if (compute_pval)
                 pvalues(iBin, iCont) = std::get<0>(results);
             if (compute_u)
@@ -280,6 +289,8 @@ std::map<std::string, DataMatrix> statistics::mwu_with_nans(const DataMatrix& bi
                 r_effect(iBin, iCont) = std::get<2>(results);
             if (compute_rb)
                 rb_effect(iBin, iCont) = std::get<3>(results);
+            if (compute_n)
+                sample_counts(iBin, iCont) = n;
         }
     }    
 
@@ -293,6 +304,8 @@ std::map<std::string, DataMatrix> statistics::mwu_with_nans(const DataMatrix& bi
         output.insert(std::make_pair("r", r_effect));
     if (compute_rb)
         output.insert(std::make_pair("rb", rb_effect));
+    if (compute_n)
+        output.insert(std::make_pair("n", sample_counts));
     
     return output;
 }

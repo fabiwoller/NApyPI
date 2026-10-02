@@ -1,9 +1,9 @@
 #include <stats.hpp>
 #include <cmath>
 
-// Computes NAN-aware Pearson correlation of two vectors.
+// Computes NAN-aware Pearson correlation of two vectors. Stores number of pairwise non-NA samples in num_samples.
 std::pair<double, double> pairwise_nan_correlation(const DataMatrix& data, 
-    int row1, int row2, double na_value)
+    int row1, int row2, double na_value, int& num_samples)
 {
     double x_sum = 0.0;
     double y_sum = 0.0;
@@ -28,6 +28,7 @@ std::pair<double, double> pairwise_nan_correlation(const DataMatrix& data,
             numNonNAs += 1;
         }
     }
+    num_samples = numNonNAs;
 
     const double avgX = x_sum / numNonNAs;
     const double avgY = y_sum / numNonNAs;
@@ -57,12 +58,13 @@ std::pair<double, double> pairwise_nan_correlation(const DataMatrix& data,
 }
 
 // NAN-aware Pearson Correlation on given DataMatrix.
-std::pair<DataMatrix, DataMatrix> statistics::pearson_with_nans(const DataMatrix& data, 
-    double na_value)
+std::tuple<DataMatrix, DataMatrix, DataMatrix> statistics::pearson_with_nans(const DataMatrix& data, 
+    double na_value, bool compute_n)
 {
     const int num_rows = data.rows();
     DataMatrix correlations(num_rows, num_rows);
     DataMatrix pvalues(num_rows, num_rows);
+    DataMatrix num_samples = compute_n ? DataMatrix(num_rows, num_rows) : DataMatrix(0, 0);
 
     // Compute each pairwise correlation of rows.
     #pragma omp parallel for
@@ -70,14 +72,20 @@ std::pair<DataMatrix, DataMatrix> statistics::pearson_with_nans(const DataMatrix
     {
         for (int jR = iR; jR < num_rows; ++jR)
         {
-            std::pair<double, double> results = pairwise_nan_correlation(data, iR, jR, na_value);
+            int n = 0;
+            std::pair<double, double> results = pairwise_nan_correlation(data, iR, jR, na_value, n);
             correlations(iR, jR) = std::get<0>(results);
             correlations(jR, iR) = std::get<0>(results);
             double pvalue = std::get<1>(results);
             pvalues(iR, jR) = pvalue;
             pvalues(jR, iR) = pvalue;
+            if (compute_n)
+            {
+                num_samples(iR, jR) = n;
+                num_samples(jR, iR) = n;
+            }
         }
     }
 
-    return std::make_pair(correlations, pvalues);
+    return std::make_tuple(correlations, pvalues, num_samples);
 }

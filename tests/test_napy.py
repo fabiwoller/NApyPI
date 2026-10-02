@@ -2137,6 +2137,111 @@ class TestLinearRegression(unittest.TestCase):
             np.testing.assert_equal(out_dict[key].tolist(), out_dict_par[key].tolist())
 
 
+class TestSampleSizes(unittest.TestCase):
+    """Test the 'n' return type, i.e. the number of samples remaining after NA removal."""
+
+    def setUp(self):
+        rng = np.random.default_rng(42)
+        self.nan_value = -99
+        num_samples = 40
+        self.cont = rng.normal(size=(5, num_samples))
+        self.cont[rng.random(self.cont.shape) < 0.2] = self.nan_value
+        self.cat = rng.integers(0, 3, size=(4, num_samples)).astype(float)
+        self.cat[rng.random(self.cat.shape) < 0.2] = self.nan_value
+        self.bin = rng.integers(0, 2, size=(3, num_samples)).astype(float)
+        self.bin[rng.random(self.bin.shape) < 0.2] = self.nan_value
+
+    def expected_n(self, data1, data2, covariates=()):
+        """Count samples that are non-NA in both variables of each pair and in all covariates."""
+        valid_covariates = np.ones(data1.shape[1], dtype=bool)
+        for covariate in covariates:
+            valid_covariates &= covariate != self.nan_value
+        valid1 = data1 != self.nan_value
+        valid2 = data2 != self.nan_value
+        return (valid1[:, None, :] & valid2[None, :, :] & valid_covariates).sum(axis=2).astype(float)
+
+    def test_pairwise_tests(self):
+        """Test 'n' of all pairwise tests against brute-force counting."""
+        nv = self.nan_value
+        cases = [
+            (napy.pearsonr(self.cont, nan_value=nv, use_numba=USE_NUMBA), self.cont, self.cont),
+            (napy.spearmanr(self.cont, nan_value=nv, use_numba=USE_NUMBA), self.cont, self.cont),
+            (napy.chi_squared(self.cat, nan_value=nv, use_numba=USE_NUMBA), self.cat, self.cat),
+            (napy.anova(self.cat, self.cont, nan_value=nv, use_numba=USE_NUMBA), self.cat, self.cont),
+            (napy.kruskal_wallis(self.cat, self.cont, nan_value=nv, use_numba=USE_NUMBA), self.cat, self.cont),
+            (napy.ttest(self.bin, self.cont, nan_value=nv, use_numba=USE_NUMBA), self.bin, self.cont),
+            (napy.mwu(self.bin, self.cont, nan_value=nv, use_numba=USE_NUMBA), self.bin, self.cont),
+        ]
+        for out_dict, data1, data2 in cases:
+            np.testing.assert_array_equal(out_dict['n'], self.expected_n(data1, data2))
+
+    def test_only_n(self):
+        """Test requesting only 'n' returns only 'n' with identical values."""
+        nv = self.nan_value
+        calls = [
+            lambda types: napy.pearsonr(self.cont, nan_value=nv, use_numba=USE_NUMBA, return_types=types),
+            lambda types: napy.spearmanr(self.cont, nan_value=nv, use_numba=USE_NUMBA, return_types=types),
+            lambda types: napy.chi_squared(self.cat, nan_value=nv, use_numba=USE_NUMBA, return_types=types),
+            lambda types: napy.anova(self.cat, self.cont, nan_value=nv, use_numba=USE_NUMBA, return_types=types),
+            lambda types: napy.kruskal_wallis(self.cat, self.cont, nan_value=nv, use_numba=USE_NUMBA, return_types=types),
+            lambda types: napy.ttest(self.bin, self.cont, nan_value=nv, use_numba=USE_NUMBA, return_types=types),
+            lambda types: napy.mwu(self.bin, self.cont, nan_value=nv, use_numba=USE_NUMBA, return_types=types),
+            lambda types: napy.partial_correlation(self.cont, nan_value=nv, return_types=types),
+            lambda types: napy.logistic_regression(self.bin, self.cont, nan_value=nv, return_types=types),
+            lambda types: napy.multinomial_regression(self.cat, self.cont, nan_value=nv, return_types=types),
+            lambda types: napy.linear_regression(self.cat, self.cont, nan_value=nv, return_types=types),
+        ]
+        for call in calls:
+            only_n = call(['n'])
+            self.assertEqual(set(only_n.keys()), {'n'})
+            np.testing.assert_array_equal(only_n['n'], call([])['n'])
+
+    def test_dataframe(self):
+        """Test 'n' carries variable labels through for DataFrame input."""
+        df = pd.DataFrame(self.cont.T, columns=[f"var{i}" for i in range(self.cont.shape[0])])
+        out = napy.pearsonr(df, nan_value=self.nan_value, axis=1, use_numba=USE_NUMBA, return_types=['n'])['n']
+        self.assertIsInstance(out, pd.DataFrame)
+        self.assertEqual(list(out.index), list(df.columns))
+        np.testing.assert_array_equal(out.values, self.expected_n(self.cont, self.cont))
+
+    def test_partial_correlation(self):
+        """Test 'n' of partial correlation also removes samples with NAs in covariates."""
+        out = napy.partial_correlation(self.cont, covar_indices=[2], nan_value=self.nan_value)['n']
+        expected = self.expected_n(self.cont, self.cont, covariates=[self.cont[2]])
+        # Pairs involving the covariate itself are not tested.
+        expected[2, :] = np.nan
+        expected[:, 2] = np.nan
+        np.testing.assert_array_equal(out, expected)
+
+    def test_linear_regression(self):
+        """Test 'n' of linear regression with covariates and NA for untested pairs."""
+        num_cat = self.cat.shape[0]
+        covariates = [self.cat[0], self.cont[1]]
+        out = napy.linear_regression(self.cat, self.cont, covars_categorical=[0], covars_continuous=[1],
+                                     nan_value=self.nan_value)['n']
+        expected = np.hstack([self.expected_n(self.cont, self.cat, covariates),
+                              self.expected_n(self.cont, self.cont, covariates)])
+        expected[:, 0] = np.nan
+        expected[1, :] = np.nan
+        expected[:, num_cat + 1] = np.nan
+        expected[np.arange(self.cont.shape[0]), num_cat + np.arange(self.cont.shape[0])] = np.nan
+        np.testing.assert_array_equal(out, expected)
+
+    def test_multinomial_regression(self):
+        """Test 'n' of multinomial regression with covariates and NA for untested pairs."""
+        num_cat = self.cat.shape[0]
+        covariates = [self.cat[0], self.cont[1]]
+        out = napy.multinomial_regression(self.cat, self.cont, covars_categorical=[0], covars_continuous=[1],
+                                          nan_value=self.nan_value)['n']
+        expected = np.hstack([self.expected_n(self.cat, self.cat, covariates),
+                              self.expected_n(self.cat, self.cont, covariates)])
+        expected[0, :] = np.nan
+        expected[:, 0] = np.nan
+        expected[:, num_cat + 1] = np.nan
+        expected[np.arange(num_cat), np.arange(num_cat)] = np.nan
+        np.testing.assert_array_equal(out, expected)
+
+
 if __name__ == "__main__":
     robjects.r['options'](warn=-1)
     unittest.main(verbosity=2)

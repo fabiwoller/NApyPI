@@ -78,13 +78,16 @@ VectorXd residuals(const VectorXd& y, const MatrixXd& Z) {
 }
 
 
+// Stores number of samples without NAs in both rows and all control rows in num_samples. It is left
+// untouched if one of the rows is a control row.
 std::pair<double, double> pairwise_nan_partial_correlation(
     const DataMatrix& data,
     int row1,
     int row2,
     const std::vector<int>& control_rows,
     double na_value, 
-    const std::string& method)
+    const std::string& method,
+    double& num_samples)
 {
     // check if row1 and row2 are in control_rows
     for (auto z : control_rows) {
@@ -106,6 +109,7 @@ std::pair<double, double> pairwise_nan_partial_correlation(
     }
 
     int n = valid_cols.size();
+    num_samples = n;
     if (n == 0) {
         return {std::numeric_limits<double>::quiet_NaN(),
                 std::numeric_limits<double>::quiet_NaN()};
@@ -193,15 +197,17 @@ std::pair<double, double> pairwise_nan_partial_correlation(
     }
 }
 
-std::pair<DataMatrix, DataMatrix> statistics::partial_correlation_with_nans(
+std::tuple<DataMatrix, DataMatrix, DataMatrix> statistics::partial_correlation_with_nans(
     const DataMatrix& data, 
     const std::vector<int>& control_rows,
     double na_value, 
-    const std::string& method)
+    const std::string& method,
+    bool compute_n)
 {
     const int num_rows = data.rows();
     DataMatrix correlations(num_rows, num_rows);
     DataMatrix pvalues(num_rows, num_rows);
+    DataMatrix num_samples = compute_n ? DataMatrix(num_rows, num_rows) : DataMatrix(0, 0);
 
     // Compute pairwise partial correlations for all rows in DataMatrix.
     #pragma omp parallel for
@@ -209,14 +215,20 @@ std::pair<DataMatrix, DataMatrix> statistics::partial_correlation_with_nans(
     {
         for (int jR = iR; jR < num_rows; ++jR)
         {
-            std::pair<double, double> results = pairwise_nan_partial_correlation(data, iR, jR, control_rows, na_value, method);
+            double n = std::numeric_limits<double>::quiet_NaN();
+            std::pair<double, double> results = pairwise_nan_partial_correlation(data, iR, jR, control_rows, na_value, method, n);
             correlations(iR, jR) = std::get<0>(results);
             correlations(jR, iR) = std::get<0>(results);
             double pvalue = std::get<1>(results);
             pvalues(iR, jR) = pvalue;
             pvalues(jR, iR) = pvalue;
+            if (compute_n)
+            {
+                num_samples(iR, jR) = n;
+                num_samples(jR, iR) = n;
+            }
         }
     }
 
-    return std::make_pair(correlations, pvalues);
+    return std::make_tuple(correlations, pvalues, num_samples);
 }

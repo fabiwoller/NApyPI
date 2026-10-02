@@ -7,9 +7,10 @@ std::tuple<double, double, double> get_nans_kruskal()
             std::numeric_limits<double>::quiet_NaN());
 }
 
+// Stores number of pairwise non-NA samples in num_samples_out.
 std::tuple<double, double, double> pairwise_nan_kruskal(const DataMatrix& cat_data, 
     int iCat, int category_groups, const vec2d& rowRanks, 
-    double na_value, bool ignore_empty_groups)
+    double na_value, bool ignore_empty_groups, int& num_samples_out)
 {
     // Iterate over each row and extract subvector of pairwise non-NAN features.
     int numDataPoints = 0;
@@ -63,6 +64,8 @@ std::tuple<double, double, double> pairwise_nan_kruskal(const DataMatrix& cat_da
             subtractRight += subtract_extra;
         }
     }
+
+    num_samples_out = numDataPoints;
 
     // Compute H statistic value by aggregating per-category rank sums.
     double h_statistic = 0.0;
@@ -130,7 +133,8 @@ std::map<std::string, DataMatrix> statistics::kruskal_wallis_with_nans(const Dat
     bool compute_pval = false;
     bool compute_h = false;
     bool compute_eta2 = false;
-    DataMatrix pvalues(0,0), h_stat(0,0), eta2(0,0);
+    bool compute_n = false;
+    DataMatrix pvalues(0,0), h_stat(0,0), eta2(0,0), sample_counts(0,0);
     
     if (return_types.count("p_unadjusted"))
     {
@@ -146,6 +150,11 @@ std::map<std::string, DataMatrix> statistics::kruskal_wallis_with_nans(const Dat
     {
         eta2 = DataMatrix(num_cat_variables, num_cont_variables);
         compute_eta2 = true;
+    }
+    if (return_types.count("n"))
+    {
+        sample_counts = DataMatrix(num_cat_variables, num_cont_variables);
+        compute_n = true;
     }
 
     #pragma omp parallel for 
@@ -190,14 +199,17 @@ std::map<std::string, DataMatrix> statistics::kruskal_wallis_with_nans(const Dat
 
         for (int iCat = 0; iCat < num_cat_variables; ++iCat)
         {
+            int n = 0;
             std::tuple<double, double, double> results = pairwise_nan_kruskal(cat_data, 
-                iCat, category_groups[iCat], row_map, na_value, ignore_empty_groups);
+                iCat, category_groups[iCat], row_map, na_value, ignore_empty_groups, n);
             if (compute_pval)
                 pvalues(iCat, iCont) = std::get<0>(results);
             if (compute_h)
                 h_stat(iCat, iCont) = std::get<1>(results);
             if (compute_eta2)
                 eta2(iCat, iCont) = std::get<2>(results);
+            if (compute_n)
+                sample_counts(iCat, iCont) = n;
         }
     }    
 
@@ -209,6 +221,8 @@ std::map<std::string, DataMatrix> statistics::kruskal_wallis_with_nans(const Dat
         output.insert(std::make_pair("H", h_stat));
     if (compute_eta2)
         output.insert(std::make_pair("eta2", eta2));
+    if (compute_n)
+        output.insert(std::make_pair("n", sample_counts));
     
     return output;
 }

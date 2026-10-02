@@ -6,6 +6,7 @@
 #include <boost/math/distributions/normal.hpp>
 #include <boost/math/distributions/complement.hpp>
 #include <utility>
+#include <tuple>
 #include <numeric>
 #include <matrix.hpp>
 #include <vector>
@@ -23,11 +24,15 @@ using vec2d = std::vector<std::vector<int>>;
 namespace statistics
 {
 
-    // NAN-aware Pearson Correlation on given DataMatrix.
-    std::pair<DataMatrix, DataMatrix> pearson_with_nans(const DataMatrix& data, double na_value);
+    // NAN-aware Pearson Correlation on given DataMatrix. Returns correlations, P-values and, if compute_n
+    // is set, the number of pairwise non-NA samples (otherwise an empty matrix).
+    std::tuple<DataMatrix, DataMatrix, DataMatrix> pearson_with_nans(const DataMatrix& data, double na_value,
+        bool compute_n);
     
-    // NAN-aware Spearman Correlation on given DataMatrix.
-    std::pair<DataMatrix, DataMatrix> spearman_with_nans(const DataMatrix& data, double na_value);
+    // NAN-aware Spearman Correlation on given DataMatrix. Returns correlations, P-values and, if compute_n
+    // is set, the number of pairwise non-NA samples (otherwise an empty matrix).
+    std::tuple<DataMatrix, DataMatrix, DataMatrix> spearman_with_nans(const DataMatrix& data, double na_value,
+        bool compute_n);
     
     // NAN-aware Chi-squared test on independence.
     std::map<std::string, DataMatrix> chi_squared_with_nans(const DataMatrix& data,
@@ -55,20 +60,25 @@ namespace statistics
         const DataMatrix& cont_data, double na_value, const std::set<std::string>& return_types, 
         const std::string& mode);
 
-    // NAN-aware partial correlation.
-    std::pair<DataMatrix, DataMatrix> partial_correlation_with_nans(
+    // NAN-aware partial correlation. Returns correlations, P-values and, if compute_n is set, the number
+    // of samples without NAs in both variables and all control variables (otherwise an empty matrix).
+    std::tuple<DataMatrix, DataMatrix, DataMatrix> partial_correlation_with_nans(
         const DataMatrix& data, 
         const std::vector<int>& control_rows,
         double na_value,
-        const std::string& method);
+        const std::string& method,
+        bool compute_n);
 
-    // NAN-aware multinomial logistic regression test. Also used for binary logistic regression.
-    std::pair<DataMatrix, DataMatrix> multinomial_regression_test_with_nans(
+    // NAN-aware multinomial logistic regression test. Also used for binary logistic regression. Returns
+    // LR statistics, P-values and, if compute_n is set, the number of samples without NAs in all involved
+    // variables (otherwise an empty matrix).
+    std::tuple<DataMatrix, DataMatrix, DataMatrix> multinomial_regression_test_with_nans(
         const DataMatrix& cat_data,
         const DataMatrix& comb_data,
         const std::vector<int>& control_rows_categorical,
         const std::vector<int>& control_rows_continuous,
-        double na_value);
+        double na_value,
+        bool compute_n);
 
     // NAN-aware linear regression with partial F-test and effect sizes.
     std::map<std::string, DataMatrix> linear_regression_with_nans(

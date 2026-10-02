@@ -6,8 +6,9 @@ std::tuple<double, double, double, double> get_nan_four_tuple()
             std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::quiet_NaN());
 }
 
+// Stores number of pairwise non-NA samples in num_samples_out.
 std::tuple<double, double, double, double> pairwise_nan_chi_squared(const DataMatrix& data, int row1, int row2,
-        int num_categories1, int num_categories2, int na_value)
+        int num_categories1, int num_categories2, int na_value, int& num_samples_out)
 {
     const int num_samples = data.cols();
     int num_non_nas = 0;
@@ -28,6 +29,7 @@ std::tuple<double, double, double, double> pairwise_nan_chi_squared(const DataMa
             cont_table[entry1][entry2] += 1;
         }
     }
+    num_samples_out = num_non_nas;
 
     if (num_non_nas == 0)
         return get_nan_four_tuple();
@@ -80,7 +82,8 @@ std::map<std::string, DataMatrix> statistics::chi_squared_with_nans(const DataMa
     bool compute_chi2 = false;
     bool compute_phi = false;
     bool compute_cramers = false;
-    DataMatrix pvalues(0,0), chi2(0,0), phi(0,0), cramers(0,0);
+    bool compute_n = false;
+    DataMatrix pvalues(0,0), chi2(0,0), phi(0,0), cramers(0,0), num_samples(0,0);
     
     if (return_types.count("p_unadjusted"))
     {
@@ -102,14 +105,20 @@ std::map<std::string, DataMatrix> statistics::chi_squared_with_nans(const DataMa
         cramers = DataMatrix(num_variables, num_variables);
         compute_cramers = true;
     }
+    if (return_types.count("n"))
+    {
+        num_samples = DataMatrix(num_variables, num_variables);
+        compute_n = true;
+    }
 
     #pragma omp parallel for 
     for (int iR = 0; iR < num_variables; ++iR)
     {
         for (int jR = iR; jR < num_variables; ++jR)
         {
+            int n = 0;
             std::tuple<double, double, double, double> results = pairwise_nan_chi_squared(data, iR, jR, 
-                category_groups[iR], category_groups[jR], na_value);
+                category_groups[iR], category_groups[jR], na_value, n);
             if (compute_pval)
             {
                 pvalues(iR, jR) = std::get<0>(results);
@@ -130,6 +139,11 @@ std::map<std::string, DataMatrix> statistics::chi_squared_with_nans(const DataMa
                 cramers(iR, jR) = std::get<3>(results);
                 cramers(jR, iR) = std::get<3>(results);
             }
+            if (compute_n)
+            {
+                num_samples(iR, jR) = n;
+                num_samples(jR, iR) = n;
+            }
         }
     }
 
@@ -143,6 +157,8 @@ std::map<std::string, DataMatrix> statistics::chi_squared_with_nans(const DataMa
         output.insert(std::make_pair("phi", phi));
     if (compute_cramers)
         output.insert(std::make_pair("cramers_v", cramers));
+    if (compute_n)
+        output.insert(std::make_pair("n", num_samples));
     
     return output;
 }

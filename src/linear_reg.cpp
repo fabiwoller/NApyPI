@@ -34,6 +34,7 @@ struct RegressionResult
     double cohens_f2 = NaN;
     double beta = NaN;
     double std_beta = NaN;
+    double num_samples = NaN;
 };
 
 std::vector<int> collect_valid_cols(
@@ -220,6 +221,7 @@ RegressionResult pairwise_nan_linear_regression(
         predictor_source);
 
     const Eigen::Index num_samples = valid_cols.size();
+    result.num_samples = static_cast<double>(num_samples);
     if (num_samples == 0) {
         return result;
     }
@@ -319,7 +321,7 @@ std::map<std::string, DataMatrix> statistics::linear_regression_with_nans(
 
     // Only create the requested output matrices.
     std::map<std::string, DataMatrix> output;
-    for (const std::string name : {"F", "p_unadjusted", "np2", "cohens_f2", "beta", "std_beta"}) {
+    for (const std::string name : {"F", "p_unadjusted", "np2", "cohens_f2", "beta", "std_beta", "n"}) {
         if (return_types.count(name)) {
             output.emplace(name, DataMatrix(num_cont_variables, num_comb_variables));
         }
@@ -330,6 +332,7 @@ std::map<std::string, DataMatrix> statistics::linear_regression_with_nans(
     DataMatrix* cohens_f2 = find_matrix(output, "cohens_f2");
     DataMatrix* beta = find_matrix(output, "beta");
     DataMatrix* std_beta = find_matrix(output, "std_beta");
+    DataMatrix* num_samples = find_matrix(output, "n");
 
     auto store = [&](size_t row, size_t col, const RegressionResult& result) {
         if (f_stat) (*f_stat)(row, col) = result.f_statistic;
@@ -338,6 +341,7 @@ std::map<std::string, DataMatrix> statistics::linear_regression_with_nans(
         if (cohens_f2) (*cohens_f2)(row, col) = result.cohens_f2;
         if (beta) (*beta)(row, col) = result.beta;
         if (std_beta) (*std_beta)(row, col) = result.std_beta;
+        if (num_samples) (*num_samples)(row, col) = result.num_samples;
     };
 
     // Rows are continuous dependent variables, columns are categorical predictors followed by continuous

@@ -7,8 +7,9 @@ std::tuple<double, double, double> get_ttest_nans()
             std::numeric_limits<double>::quiet_NaN());
 }
 
+// Stores number of pairwise non-NA samples in num_samples_out.
 std::tuple<double, double, double> pairwise_nan_ttest(const DataMatrix& bin_data, const DataMatrix& cont_data,
-    int rowCat, int rowCont, double na_value, bool use_welch)
+    int rowCat, int rowCont, double na_value, bool use_welch, int& num_samples_out)
 {
     const int num_samples = bin_data.cols();
     
@@ -29,6 +30,7 @@ std::tuple<double, double, double> pairwise_nan_ttest(const DataMatrix& bin_data
             ++group_counts[category];
         }
     }
+    num_samples_out = group_counts[0] + group_counts[1];
 
     // Check if one of the two categories contains zero elements after NA removal.
     if (group_counts[0] <= 1 || group_counts[1] <= 1)
@@ -108,7 +110,8 @@ std::map<std::string, DataMatrix> statistics::ttest(const DataMatrix& bin_data, 
     bool compute_pval = false;
     bool compute_t = false;
     bool compute_cohens = false;
-    DataMatrix pvalues(0,0), t_stat(0,0), cohens(0,0);
+    bool compute_n = false;
+    DataMatrix pvalues(0,0), t_stat(0,0), cohens(0,0), num_samples(0,0);
     
     if (return_types.count("p_unadjusted"))
     {
@@ -125,20 +128,28 @@ std::map<std::string, DataMatrix> statistics::ttest(const DataMatrix& bin_data, 
         cohens = DataMatrix(num_bin_variables, num_cont_variables);
         compute_cohens = true;
     }
+    if (return_types.count("n"))
+    {
+        num_samples = DataMatrix(num_bin_variables, num_cont_variables);
+        compute_n = true;
+    }
 
     #pragma omp parallel for 
     for (int iCat = 0; iCat < num_bin_variables; ++iCat)
     {
         for (int iCont = 0; iCont < num_cont_variables; ++iCont)
         {
+            int n = 0;
             std::tuple<double, double, double> results = pairwise_nan_ttest(bin_data, cont_data, 
-                iCat, iCont, na_value, use_welch);
+                iCat, iCont, na_value, use_welch, n);
             if (compute_pval)
                 pvalues(iCat, iCont) = std::get<0>(results);
             if (compute_t)
                 t_stat(iCat, iCont) = std::get<1>(results);
             if (compute_cohens)
                 cohens(iCat, iCont) = std::get<2>(results);
+            if (compute_n)
+                num_samples(iCat, iCont) = n;
         }
     }    
 
@@ -150,6 +161,8 @@ std::map<std::string, DataMatrix> statistics::ttest(const DataMatrix& bin_data, 
         output.insert(std::make_pair("t", t_stat));
     if (compute_cohens)
         output.insert(std::make_pair("cohens_d", cohens));
+    if (compute_n)
+        output.insert(std::make_pair("n", num_samples));
     
     return output;
 }

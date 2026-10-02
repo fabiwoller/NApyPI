@@ -184,8 +184,8 @@ def pearsonr(data : np.array, nan_value : float = -999, axis : int = 0, threads 
         threads (int, optional): Number of threads to be used in parallel computation. Defaults to 1.
         use_numba (bool, optional): If set to True, use numba based python implementation instead of CPP version.
         return_types (list[str], optional): List of data matrices to return. Can be any subset of
-        'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek', and 'r'. If an empty list is
-        passed, every possible data matrix is returned.
+        'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek', 'r', and 'n' (number of pairwise
+        non-NA samples). If an empty list is passed, every possible data matrix is returned.
     """
     input_data = data
     data = parse_input_single_matrix(data)
@@ -194,11 +194,12 @@ def pearsonr(data : np.array, nan_value : float = -999, axis : int = 0, threads 
     _check_input_data_single_matrix(data, threads, axis)
 
     # Check input of Pvalue adjustment method.
-    if not set(return_types).issubset({'r', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek'}):
+    if not set(return_types).issubset({'r', 'n', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek'}):
         raise ValueError(f"Unknown return type in input list: {return_types}.")
 
     if len(return_types) == 0:
-        return_types = ['r', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek']
+        return_types = ['r', 'n', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek']
+    compute_n = 'n' in return_types
 
     # Transpose data if necessary.
     if axis==1:
@@ -213,12 +214,13 @@ def pearsonr(data : np.array, nan_value : float = -999, axis : int = 0, threads 
         # Set number of desired threads for computation.
         set_num_threads(threads)
         data_mat = DataMatrix(data)
-        corr_mat, pvalue_mat = pearson_with_nans(data_mat, nan_value)
+        corr_mat, pvalue_mat, n_mat = pearson_with_nans(data_mat, nan_value, compute_n)
         corr_mat = np.array(corr_mat, copy=False)
         pvalue_mat = np.array(pvalue_mat, copy=False)
+        n_mat = np.array(n_mat, copy=False)
 
     else: # Use numba-based python implementation.
-        corr_mat, pvalue_mat = pearson_numba(data, nan_value, threads)
+        corr_mat, pvalue_mat, n_mat = pearson_numba(data, nan_value, threads, compute_n)
     
     # Clip values to range 0 and 1 (rounding errors)
     pvalue_mat = np.clip(pvalue_mat, a_min=0.0, a_max=1.0)
@@ -227,6 +229,9 @@ def pearsonr(data : np.array, nan_value : float = -999, axis : int = 0, threads 
     # Check which effect sizes and Pvalues to return.
     if 'r' in return_types:
         output_dic["r"] = corr_mat
+
+    if compute_n:
+        output_dic["n"] = n_mat
 
     if 'p_bonferroni' in return_types:
         pvalue_mat_bonf = _adjust_pvalues_bonferroni(pvalue_mat.copy(), ignore_diag=True)
@@ -260,19 +265,20 @@ def spearmanr(data : np.array, nan_value : float = -999, axis : int = 0, threads
         threads (int, optional): Number of threads to be used in parallel computation. Defaults to 1.
         use_numba (bool, optional): If set to True, use numba based python implementation instead of CPP version.
         return_types (list[str], optional): List of data matrices to return. Can be any subset of
-        'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek', and 'rho'. If an empty list is
-        passed, every possible data matrix is returned.
+        'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek', 'rho', and 'n' (number of pairwise
+        non-NA samples). If an empty list is passed, every possible data matrix is returned.
     """
     input_data = data
     data = parse_input_single_matrix(data)
 
     _check_input_data_single_matrix(data, threads, axis)
     # Check input of return types list.
-    if not set(return_types).issubset({'rho', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek'}):
+    if not set(return_types).issubset({'rho', 'n', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek'}):
         raise ValueError(f"Unknown return type in input list: {return_types}.")
 
     if len(return_types) == 0:
-        return_types = ['rho', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek']
+        return_types = ['rho', 'n', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek']
+    compute_n = 'n' in return_types
 
     # Transpose data if necessary.
     if axis==1:
@@ -287,11 +293,12 @@ def spearmanr(data : np.array, nan_value : float = -999, axis : int = 0, threads
         set_num_threads(threads)
         # Convert into wrapper object.
         data_mat = DataMatrix(data)
-        corr_mat, pvalue_mat = spearman_with_nans(data_mat, nan_value)
+        corr_mat, pvalue_mat, n_mat = spearman_with_nans(data_mat, nan_value, compute_n)
         corr_mat = np.array(corr_mat, copy=False)
         pvalue_mat = np.array(pvalue_mat, copy=False)
+        n_mat = np.array(n_mat, copy=False)
     else:
-        corr_mat, pvalue_mat = spearman_numba(data, nan_value, threads)
+        corr_mat, pvalue_mat, n_mat = spearman_numba(data, nan_value, threads, compute_n)
         
     # Clip values to range 0 and 1 (rounding errors)
     pvalue_mat = np.clip(pvalue_mat, a_min=0.0, a_max=1.0)
@@ -300,6 +307,9 @@ def spearmanr(data : np.array, nan_value : float = -999, axis : int = 0, threads
     # Check which effect sizes and Pvalues to return.
     if 'rho' in return_types:
         output_dic["rho"] = corr_mat
+
+    if compute_n:
+        output_dic["n"] = n_mat
 
     if 'p_bonferroni' in return_types:
         pvalue_mat_bonf = _adjust_pvalues_bonferroni(pvalue_mat.copy(), ignore_diag=True)
@@ -333,8 +343,8 @@ def chi_squared(data : np.array, nan_value : float = -999, axis : int = 0, threa
         threads (int, optional): Number of threads to be used in parallel computation. Defaults to 1.
         check_data (bool, optional): Whether to perform additional consistency checks on input data. Defaults to False.
         return_types (list[str], optional): List of result data matrices to return. Can be any subset of
-        'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek', 'chi2', 'phi', and 'cramers_v'.
-        If an empty list is passed, every possible data matrix is returned.
+        'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek', 'chi2', 'phi', 'cramers_v', and 'n'
+        (number of pairwise non-NA samples). If an empty list is passed, every possible data matrix is returned.
         use_numba (bool, optional): Whether to use numba-parallelized python implementation.
     """
     input_data = data
@@ -342,11 +352,11 @@ def chi_squared(data : np.array, nan_value : float = -999, axis : int = 0, threa
 
     _check_input_data_single_matrix(data, threads, axis)
     # Check input of return types list.
-    if not set(return_types).issubset({'chi2', 'phi', 'cramers_v', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek'}):
+    if not set(return_types).issubset({'chi2', 'phi', 'cramers_v', 'n', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek'}):
         raise ValueError(f"Unknown return type in input list: {return_types}.")
 
     if len(return_types) == 0:
-        return_types = ['chi2', 'phi', 'cramers_v', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek']
+        return_types = ['chi2', 'phi', 'cramers_v', 'n', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek']
     
     # Tranpose data if necessary.
     if axis==1:
@@ -387,17 +397,20 @@ def chi_squared(data : np.array, nan_value : float = -999, axis : int = 0, threa
         compute_chi2 = 'chi2' in return_types_mod
         compute_phi = 'phi' in return_types_mod
         compute_cramers = 'cramers_v' in return_types_mod
-        pvalue_mat, chi2_mat, phi_mat, cramers_mat = chi2_numba(data, np.array(categories_per_var), nan_value,
+        compute_n = 'n' in return_types_mod
+        pvalue_mat, chi2_mat, phi_mat, cramers_mat, n_mat = chi2_numba(data, np.array(categories_per_var), nan_value,
                                                             compute_pvalues, compute_chi2, compute_phi,
-                                                            compute_cramers, threads)
+                                                            compute_cramers, threads, compute_n)
         result_dict = dict()
         result_dict["p_unadjusted"] = pvalue_mat
         result_dict["chi2"] = chi2_mat
         result_dict["phi"] = phi_mat
         result_dict["cramers_v"] = cramers_mat
+        result_dict["n"] = n_mat
     
     # Clip values to 0 and 1
-    result_dict["p_unadjusted"] =  np.clip(result_dict["p_unadjusted"], a_min=0.0, a_max=1.0)
+    if 'p_unadjusted' in result_dict:
+        result_dict["p_unadjusted"] =  np.clip(result_dict["p_unadjusted"], a_min=0.0, a_max=1.0)
 
     output_dic = dict()
     # Check which effect sizes and Pvalues to return.
@@ -409,6 +422,9 @@ def chi_squared(data : np.array, nan_value : float = -999, axis : int = 0, threa
 
     if 'cramers_v' in return_types:
         output_dic["cramers_v"] = np.array(result_dict["cramers_v"], copy=False)
+
+    if 'n' in return_types:
+        output_dic["n"] = np.array(result_dict["n"], copy=False)
     
     # Check if P-value results are desired.
     if 'p_unadjusted' in result_dict.keys():
@@ -448,8 +464,8 @@ def anova(cat_data : np.array, cont_data : np.array, nan_value : float = -999, a
         threads (int, optional): Number of threads to be used in parallel computation. Defaults to 1.
         check_data (bool, optional): Whether to perform additional consistency checks on input data. Defaults to False.
         return_types (list[str], optional): List of result data matrices to return. Can be any subset of
-        'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek', 'F', 'np2'.
-        If an empty list is passed, every possible data matrix is returned.
+        'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek', 'F', 'np2', 'n' (number of pairwise
+        non-NA samples). If an empty list is passed, every possible data matrix is returned.
         use_numba (bool, optional): Whether or not to use numba-based python implementation.
         ignore_empty_groups (bool, optional): Whether to simply exclude groups that become empty due
             to pairwise removal. If set to False, returns np.nan for both effect size and P-value for this
@@ -464,11 +480,11 @@ def anova(cat_data : np.array, cont_data : np.array, nan_value : float = -999, a
 
     _check_input_data_two_matrices(cont_data, cat_data, threads, axis)
     # Check input of return types list.
-    if not set(return_types).issubset({'F', 'np2', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek'}):
+    if not set(return_types).issubset({'F', 'np2', 'n', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek'}):
         raise ValueError(f"Unknown return type in input list: {return_types}.")
 
     if len(return_types) == 0:
-        return_types = ['F', 'np2', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek']
+        return_types = ['F', 'np2', 'n', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek']
     
     # Transpose data if necessary.
     if axis==1:
@@ -511,16 +527,19 @@ def anova(cat_data : np.array, cont_data : np.array, nan_value : float = -999, a
         compute_pvalues = 'p_unadjusted' in return_types_mod
         compute_f = 'F' in return_types_mod
         compute_np2 = 'np2' in return_types_mod
-        pvalue_mat, f_mat, np2_mat = anova_numba(cat_data, cont_data, np.array(categories_per_var), nan_value,
+        compute_n = 'n' in return_types_mod
+        pvalue_mat, f_mat, np2_mat, n_mat = anova_numba(cat_data, cont_data, np.array(categories_per_var), nan_value,
                                                             compute_pvalues, compute_f, compute_np2, threads,
-                                                            ignore_empty_groups)
+                                                            ignore_empty_groups, compute_n)
         result_dict = dict()
         result_dict["p_unadjusted"] = pvalue_mat
         result_dict["F"] = f_mat
         result_dict["np2"] = np2_mat
+        result_dict["n"] = n_mat
         
     # Clip values to 0 and 1
-    result_dict["p_unadjusted"] =  np.clip(result_dict["p_unadjusted"], a_min=0.0, a_max=1.0)
+    if 'p_unadjusted' in result_dict:
+        result_dict["p_unadjusted"] =  np.clip(result_dict["p_unadjusted"], a_min=0.0, a_max=1.0)
 
     output_dic = dict()
     # Check which effect sizes and Pvalues to return.
@@ -529,6 +548,9 @@ def anova(cat_data : np.array, cont_data : np.array, nan_value : float = -999, a
 
     if 'np2' in return_types:
         output_dic["np2"] = np.array(result_dict["np2"], copy=False)
+
+    if 'n' in return_types:
+        output_dic["n"] = np.array(result_dict["n"], copy=False)
     
     # Check if P-value results are desired.
     if 'p_unadjusted' in result_dict.keys():
@@ -568,8 +590,8 @@ def kruskal_wallis(cat_data : np.array, cont_data : np.array, nan_value : float 
         threads (int, optional): Number of threads to be used in parallel computation. Defaults to 1.
         check_data (bool, optional): Whether to perform additional consistency checks on input data. Defaults to False.
         return_types (list[str], optional): List of result data matrices to return. Can be any subset of
-        'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek', 'H', 'eta2'.
-        If an empty list is passed, every possible data matrix is returned.
+        'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek', 'H', 'eta2', 'n' (number of pairwise
+        non-NA samples). If an empty list is passed, every possible data matrix is returned.
         use_numba (bool, optional): Whether or not to use numba-based implementation.
         ignore_empty_groups (bool, optional): Whether to ignore groups that become empty due to pairwise removal. 
             If set to False, the output of P-value and effect size will be set to NA if at least one
@@ -584,11 +606,11 @@ def kruskal_wallis(cat_data : np.array, cont_data : np.array, nan_value : float 
     _check_input_data_two_matrices(cont_data, cat_data, threads, axis)
     # Check input of return types list.
     if not set(return_types).issubset(
-            {'H', 'eta2', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek'}):
+            {'H', 'eta2', 'n', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek'}):
         raise ValueError(f"Unknown return type in input list: {return_types}.")
 
     if len(return_types) == 0:
-        return_types = ['H', 'eta2', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek']
+        return_types = ['H', 'eta2', 'n', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek']
     
     # Transpose data if necessary.
     if axis==1:
@@ -632,16 +654,19 @@ def kruskal_wallis(cat_data : np.array, cont_data : np.array, nan_value : float 
         compute_pvalues = 'p_unadjusted' in return_types_mod
         compute_h = 'H' in return_types_mod
         compute_eta2 = 'eta2' in return_types_mod
-        pvalue_mat, h_mat, eta2_mat = kruskal_wallis_numba(cat_data, cont_data, nan_value, np.array(categories_per_var),
+        compute_n = 'n' in return_types_mod
+        pvalue_mat, h_mat, eta2_mat, n_mat = kruskal_wallis_numba(cat_data, cont_data, nan_value, np.array(categories_per_var),
                                                             threads, compute_pvalues, compute_h, compute_eta2,
-                                                            ignore_empty_groups)
+                                                            ignore_empty_groups, compute_n)
         result_dict = dict()
         result_dict["p_unadjusted"] = pvalue_mat
         result_dict["H"] = h_mat
         result_dict["eta2"] = eta2_mat
+        result_dict["n"] = n_mat
         
     # Clip values to 0 and 1
-    result_dict["p_unadjusted"] =  np.clip(result_dict["p_unadjusted"], a_min=0.0, a_max=1.0)
+    if 'p_unadjusted' in result_dict:
+        result_dict["p_unadjusted"] =  np.clip(result_dict["p_unadjusted"], a_min=0.0, a_max=1.0)
 
     output_dic = dict()
     # Check which effect sizes and Pvalues to return.
@@ -650,6 +675,9 @@ def kruskal_wallis(cat_data : np.array, cont_data : np.array, nan_value : float 
 
     if 'eta2' in return_types:
         output_dic["eta2"] = np.array(result_dict["eta2"], copy=False)
+
+    if 'n' in return_types:
+        output_dic["n"] = np.array(result_dict["n"], copy=False)
 
     # Check if P-value results are desired.
     if 'p_unadjusted' in result_dict.keys():
@@ -690,7 +718,8 @@ def ttest(bin_data : np.array, cont_data : np.array, nan_value : float = -999, a
         threads (int, optional): Number of threads to be used in parallel computation. Defaults to 1.
         check_data (bool, optional): Whether to perform additional consistency checks on input data. Defaults to False.
         return_types (list[str], optional): List of result data matrices to return. Can be any subset of
-        'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek', 't', 'cohens_d'.
+        'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek', 't', 'cohens_d', 'n' (number of
+        pairwise non-NA samples). If an empty list is passed, every possible data matrix is returned.
         equal_var (bool, optional): Whether or not to assume that variances of pairwise variables
             are equal (in which case to perform Student's t-test) or not (in which case to perform
             Welch's t-test). Defaults to True.
@@ -705,11 +734,11 @@ def ttest(bin_data : np.array, cont_data : np.array, nan_value : float = -999, a
     _check_input_data_two_matrices(cont_data, bin_data, threads, axis)
     # Check input of return types list.
     if not set(return_types).issubset(
-            {'t', 'cohens_d', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek'}):
+            {'t', 'cohens_d', 'n', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek'}):
         raise ValueError(f"Unknown return type in input list: {return_types}.")
 
     if len(return_types) == 0:
-        return_types = ['t', 'cohens_d', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek']
+        return_types = ['t', 'cohens_d', 'n', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek']
     
     # Transpose data if necessary.
     if axis==1:
@@ -754,15 +783,19 @@ def ttest(bin_data : np.array, cont_data : np.array, nan_value : float = -999, a
         compute_pvalues = 'p_unadjusted' in return_types_mod
         compute_t = 't' in return_types_mod
         compute_cohens = 'cohens_d' in return_types_mod
-        pvalue_mat, t_mat, cohens_mat = ttest_numba(bin_data, cont_data, nan_value, compute_pvalues,
-                                                                compute_t, compute_cohens, use_welch, threads)
+        compute_n = 'n' in return_types_mod
+        pvalue_mat, t_mat, cohens_mat, n_mat = ttest_numba(bin_data, cont_data, nan_value, compute_pvalues,
+                                                                compute_t, compute_cohens, use_welch, threads,
+                                                                compute_n)
         result_dict = dict()
         result_dict["p_unadjusted"] = pvalue_mat
         result_dict["t"] = t_mat
         result_dict["cohens_d"] = cohens_mat
+        result_dict["n"] = n_mat
     
     # Clip values to 0 and 1
-    result_dict["p_unadjusted"] =  np.clip(result_dict["p_unadjusted"], a_min=0.0, a_max=1.0)
+    if 'p_unadjusted' in result_dict:
+        result_dict["p_unadjusted"] =  np.clip(result_dict["p_unadjusted"], a_min=0.0, a_max=1.0)
 
     output_dic = dict()
     # Check which effect sizes and Pvalues to return.
@@ -771,6 +804,9 @@ def ttest(bin_data : np.array, cont_data : np.array, nan_value : float = -999, a
 
     if 'cohens_d' in return_types:
         output_dic["cohens_d"] = np.array(result_dict["cohens_d"], copy=False)
+
+    if 'n' in return_types:
+        output_dic["n"] = np.array(result_dict["n"], copy=False)
 
     # Check if P-value results are desired.
     if 'p_unadjusted' in result_dict.keys():
@@ -810,8 +846,8 @@ def mwu(bin_data: np.array, cont_data: np.array, nan_value: float = -999, axis: 
         threads (int, optional): Number of threads to be used in parallel computation. Defaults to 1.
         check_data (bool, optional): Whether to perform additional consistency checks on input data. Defaults to False.
         return_types (str, optional): List of result data matrices to return. Can be any subset of
-        'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek', 'U', 'r'.
-        If an empty list is passed, every possible data matrix is returned.
+        'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek', 'U', 'r', 'rb', 'n' (number of
+        pairwise non-NA samples). If an empty list is passed, every possible data matrix is returned.
         mode (str, optional): Which method to use for the P-value calculation. Can be one of 'exact', 'asymptotic', or
         'auto'. In the first case, the computationally expensive exact calculation is used, in case of 'asymptotic' we
         make use of the z-value based approximation of U. In both cases, we use averaging for tiebreaking.
@@ -832,11 +868,11 @@ def mwu(bin_data: np.array, cont_data: np.array, nan_value: float = -999, axis: 
         raise ValueError(f"Invalid Mann-Whitney-U test mode : {mode}.")
 
     if not set(return_types).issubset(
-            {'U', 'r', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek', 'rb'}):
+            {'U', 'r', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek', 'rb', 'n'}):
         raise ValueError(f"Unknown return type in input list: {return_types}.")
 
     if len(return_types) == 0:
-        return_types = ['U', 'r', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek', 'rb']
+        return_types = ['U', 'r', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek', 'rb', 'n']
 
     # Transpose data if necessary.
     if axis == 1:
@@ -885,16 +921,20 @@ def mwu(bin_data: np.array, cont_data: np.array, nan_value: float = -999, axis: 
         compute_u = 'U' in return_types_mod
         compute_r = 'r' in return_types_mod
         compute_rb = 'rb' in return_types_mod
-        pvalue_mat, u_mat, r_mat, rb_mat = mann_whitney_numba(bin_data, cont_data, nan_value, compute_pvalues,
-                                                                     compute_u, compute_r, compute_rb, threads, mode_int)
+        compute_n = 'n' in return_types_mod
+        pvalue_mat, u_mat, r_mat, rb_mat, n_mat = mann_whitney_numba(bin_data, cont_data, nan_value, compute_pvalues,
+                                                                     compute_u, compute_r, compute_rb, threads, mode_int,
+                                                                     compute_n)
         result_dict = dict()
         result_dict["p_unadjusted"] = pvalue_mat
         result_dict["U"] = u_mat
         result_dict["r"] = r_mat
         result_dict["rb"] = rb_mat
+        result_dict["n"] = n_mat
     
     # Clip values to 0 and 1
-    result_dict["p_unadjusted"] =  np.clip(result_dict["p_unadjusted"], a_min=0.0, a_max=1.0)
+    if 'p_unadjusted' in result_dict:
+        result_dict["p_unadjusted"] =  np.clip(result_dict["p_unadjusted"], a_min=0.0, a_max=1.0)
 
     output_dic = dict()
     # Check which effect sizes and Pvalues to return.
@@ -906,6 +946,9 @@ def mwu(bin_data: np.array, cont_data: np.array, nan_value: float = -999, axis: 
 
     if 'rb' in return_types:
         output_dic["rb"] = np.array(result_dict["rb"], copy=False)
+
+    if 'n' in return_types:
+        output_dic["n"] = np.array(result_dict["n"], copy=False)
 
     # Check if P-value results are desired.
     if 'p_unadjusted' in result_dict.keys():
@@ -945,7 +988,8 @@ def partial_correlation(data : np.array, covar_indices: list[int] = [], nan_valu
         threads (int, optional): Number of threads to be used in parallel computation. Defaults to 1.
         use_numba (bool, optional): Whether or not to use numba-based python implementation. Defaults to False.
         return_types (list[str], optional): List of result data matrices to return. Can be any subset of
-            'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek', 'correlation'.
+            'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek', 'correlation', 'n' (number of
+            samples without NAs in both variables and all covariates, NA for pairs involving a covariate).
             If an empty list is passed, every possible data matrix is returned.
         method (str, optional): Which correlation method to use. Can be chosen from "pearson" and "spearman". 
             Defaults to "pearson".
@@ -953,11 +997,12 @@ def partial_correlation(data : np.array, covar_indices: list[int] = [], nan_valu
     # Check validity of input data.
     _check_input_data_single_matrix(data, threads, axis)
     # Check input of return types list.
-    if not set(return_types).issubset({'correlation', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek'}):
+    if not set(return_types).issubset({'correlation', 'n', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek'}):
         raise ValueError(f"Unknown return type in input list: {return_types}.")
 
     if len(return_types) == 0:
-        return_types = ['correlation', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek']
+        return_types = ['correlation', 'n', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek']
+    compute_n = 'n' in return_types
         
     if method not in ['pearson', 'spearman']:
         raise ValueError(f"Unknown correlation method: {method}. Supported methods are 'pearson' and 'spearman'.")
@@ -988,9 +1033,10 @@ def partial_correlation(data : np.array, covar_indices: list[int] = [], nan_valu
         # Set number of desired threads for computation.
         set_num_threads(threads)
         data_mat = DataMatrix(data)
-        corr_mat, pvalue_mat = partial_correlation_with_nans(data_mat, covar_indices, nan_value, method)
+        corr_mat, pvalue_mat, n_mat = partial_correlation_with_nans(data_mat, covar_indices, nan_value, method, compute_n)
         corr_mat = np.array(corr_mat, copy=False)
         pvalue_mat = np.array(pvalue_mat, copy=False)
+        n_mat = np.array(n_mat, copy=False)
     
     else: # Use numba-based python implementation.
         pass
@@ -1003,6 +1049,9 @@ def partial_correlation(data : np.array, covar_indices: list[int] = [], nan_valu
     # Check which effect sizes and Pvalues to return.
     if 'correlation' in return_types:
         output_dic["correlation"] = corr_mat
+
+    if compute_n:
+        output_dic["n"] = n_mat
     
     if 'p_bonferroni' in return_types:
         pvalue_mat_bonf = _adjust_pvalues_bonferroni(pvalue_mat.copy(), ignore_diag=True)
@@ -1042,7 +1091,7 @@ def _categorical_regression(cat_data : np.ndarray, cont_data : np.ndarray, covar
         Dictionary of data matrices with shape (cat_data.shape[0], cat_data.shape[0] + cont_data.shape[0]).
     """
     _check_input_data_two_matrices(cont_data, cat_data, threads, axis)
-    available_types = ['LR_statistic', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek']
+    available_types = ['LR_statistic', 'n', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek']
     if not set(return_types).issubset(available_types):
         raise ValueError(f"Unknown return type in input list: {return_types}.")
 
@@ -1066,16 +1115,20 @@ def _categorical_regression(cat_data : np.ndarray, cont_data : np.ndarray, covar
     set_num_threads(threads)
     cat_data_mat = DataMatrix(cat_data)
     cont_data_mat = DataMatrix(cont_data)
-    lr_mat, pvalue_mat = multinomial_regression_test_with_nans(cat_data_mat, cont_data_mat, covars_categorical,
-                                                                       covars_continuous, nan_value)
+    compute_n = 'n' in return_types
+    lr_mat, pvalue_mat, n_mat = multinomial_regression_test_with_nans(cat_data_mat, cont_data_mat, covars_categorical,
+                                                                       covars_continuous, nan_value, compute_n)
     lr_mat = np.array(lr_mat, copy=False)
     pvalue_mat = np.array(pvalue_mat, copy=False)
+    n_mat = np.array(n_mat, copy=False)
 
     if binary_only:
         # Non-binary categorical variables can only be used as predictors, not as dependent variables.
         num_categories = np.array([len(np.unique(row[row != nan_value])) for row in cat_data])
         lr_mat[num_categories != 2, :] = np.nan
         pvalue_mat[num_categories != 2, :] = np.nan
+        if compute_n:
+            n_mat[num_categories != 2, :] = np.nan
 
     # Clip values to range 0 and 1 (rounding errors).
     pvalue_mat = np.clip(pvalue_mat, a_min=0.0, a_max=1.0)
@@ -1083,6 +1136,9 @@ def _categorical_regression(cat_data : np.ndarray, cont_data : np.ndarray, covar
     output_dic = dict()
     if 'LR_statistic' in return_types:
         output_dic['LR_statistic'] = lr_mat
+
+    if compute_n:
+        output_dic['n'] = n_mat
 
     # Each pair of dependent and predictor variable is a separate test, self-regressions are already NA.
     if 'p_bonferroni' in return_types:
@@ -1116,7 +1172,8 @@ def logistic_regression(cat_data : np.array, cont_data : np.array, covars_catego
         axis (int, optional): Whether to consider rows as variables (axis=0) or columns (axis=1). Defaults to 0.
         threads (int, optional): Number of threads to be used in parallel computation. Defaults to 1.
         return_types (list[str], optional): List of result data matrices to return. Can be any subset of
-        'LR_statistic', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek'.
+        'LR_statistic', 'n', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek'. 'n' is the number
+        of samples without NAs in the dependent, the predictor and all covariate variables.
         If an empty list is passed, every possible data matrix is returned.
         use_numba (bool, optional): Whether or not to use numba-based python implementation. Not implemented yet. Defaults to False.
     """
@@ -1140,7 +1197,8 @@ def multinomial_regression(cat_data : np.array, cont_data : np.array, covars_cat
         axis (int, optional): Whether to consider rows as variables (axis=0) or columns (axis=1). Defaults to 0.
         threads (int, optional): Number of threads to be used in parallel computation. Defaults to 1.
         return_types (list[str], optional): List of result data matrices to return. Can be any subset of
-        'LR_statistic', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek'.
+        'LR_statistic', 'n', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb', 'p_benjamini_yek'. 'n' is the number
+        of samples without NAs in the dependent, the predictor and all covariate variables.
         If an empty list is passed, every possible data matrix is returned.
         use_numba (bool, optional): Whether or not to use numba-based python implementation. Not implemented yet. Defaults to False.
     """
@@ -1212,8 +1270,9 @@ def linear_regression(cat_data : np.array, cont_data : np.array, covars_categori
         axis (int, optional): Whether to consider rows as variables (axis=0) or columns (axis=1). Defaults to 0.
         threads (int, optional): Number of threads to be used in parallel computation. Defaults to 1.
         return_types (list[str], optional): List of result data matrices to return. Can be any subset of
-        'F', 'np2', 'cohens_f2', 'beta', 'std_beta', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb',
-        'p_benjamini_yek'. If an empty list is passed, every possible data matrix is returned.
+        'F', 'np2', 'cohens_f2', 'beta', 'std_beta', 'n', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb',
+        'p_benjamini_yek'. 'n' is the number of samples without NAs in the dependent, the predictor and all covariate
+        variables. If an empty list is passed, every possible data matrix is returned.
 
     Returns:
         Dictionary of data matrices with shape (cont_data.shape[0], cat_data.shape[0] + cont_data.shape[0]).
@@ -1221,8 +1280,8 @@ def linear_regression(cat_data : np.array, cont_data : np.array, covars_categori
         cat_data.shape[0] + j to continuous predictor j.
     """
     _check_input_data_two_matrices(cont_data, cat_data, threads, axis)
-    available_types = ['F', 'np2', 'cohens_f2', 'beta', 'std_beta', 'p_unadjusted', 'p_bonferroni', 'p_benjamini_hb',
-                       'p_benjamini_yek']
+    available_types = ['F', 'np2', 'cohens_f2', 'beta', 'std_beta', 'n', 'p_unadjusted', 'p_bonferroni',
+                       'p_benjamini_hb', 'p_benjamini_yek']
     if not set(return_types).issubset(available_types):
         raise ValueError(f"Unknown return type in input list: {return_types}.")
 
@@ -1255,7 +1314,7 @@ def linear_regression(cat_data : np.array, cont_data : np.array, covars_categori
                                                       covars_continuous, nan_value, return_types_mod)
 
     output_dic = dict()
-    for name in ['F', 'np2', 'cohens_f2', 'beta', 'std_beta']:
+    for name in ['F', 'np2', 'cohens_f2', 'beta', 'std_beta', 'n']:
         if name in return_types:
             output_dic[name] = np.array(result_dict[name], copy=False)
 

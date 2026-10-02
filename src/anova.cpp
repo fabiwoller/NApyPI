@@ -7,8 +7,9 @@ std::tuple<double, double, double> get_nan_three_tuple()
             std::numeric_limits<double>::quiet_NaN());
 }
 
+// Stores number of pairwise non-NA samples in num_samples_out.
 std::tuple<double, double, double> pairwise_nan_anova(const DataMatrix& cat_data, const DataMatrix& cont_data,
-    int rowCat, int rowCont, int numCats, double na_value, bool ignore_empty_groups)
+    int rowCat, int rowCont, int numCats, double na_value, bool ignore_empty_groups, int& num_samples_out)
 {
     const int num_samples = cat_data.cols();
     
@@ -33,6 +34,7 @@ std::tuple<double, double, double> pairwise_nan_anova(const DataMatrix& cat_data
             total_count += 1;
         }
     }
+    num_samples_out = total_count;
 
     if (total_count == 0)
     {
@@ -136,7 +138,8 @@ std::map<std::string, DataMatrix> statistics::anova_with_nans(const DataMatrix& 
     bool compute_pval = false;
     bool compute_f = false;
     bool compute_np2 = false;
-    DataMatrix pvalues(0,0), f_stat(0,0), np2(0,0);
+    bool compute_n = false;
+    DataMatrix pvalues(0,0), f_stat(0,0), np2(0,0), num_samples(0,0);
     
     if (return_types.count("p_unadjusted"))
     {
@@ -153,20 +156,28 @@ std::map<std::string, DataMatrix> statistics::anova_with_nans(const DataMatrix& 
         np2 = DataMatrix(num_cat_variables, num_cont_variables);
         compute_np2 = true;
     }
+    if (return_types.count("n"))
+    {
+        num_samples = DataMatrix(num_cat_variables, num_cont_variables);
+        compute_n = true;
+    }
 
     #pragma omp parallel for 
     for (int iCat = 0; iCat < num_cat_variables; ++iCat)
     {
         for (int iCont = 0; iCont < num_cont_variables; ++iCont)
         {
+            int n = 0;
             std::tuple<double, double, double> results = pairwise_nan_anova(cat_data, cont_data, 
-                iCat, iCont, category_groups[iCat], na_value, ignore_empty_groups);
+                iCat, iCont, category_groups[iCat], na_value, ignore_empty_groups, n);
             if (compute_pval)
                 pvalues(iCat, iCont) = std::get<0>(results);
             if (compute_f)
                 f_stat(iCat, iCont) = std::get<1>(results);
             if (compute_np2)
                 np2(iCat, iCont) = std::get<2>(results);
+            if (compute_n)
+                num_samples(iCat, iCont) = n;
         }
     }   
 
@@ -178,6 +189,8 @@ std::map<std::string, DataMatrix> statistics::anova_with_nans(const DataMatrix& 
         output.insert(std::make_pair("F", f_stat));
     if (compute_np2)
         output.insert(std::make_pair("np2", np2));
+    if (compute_n)
+        output.insert(std::make_pair("n", num_samples));
     
     return output;
 }

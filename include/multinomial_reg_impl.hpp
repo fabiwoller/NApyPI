@@ -20,6 +20,7 @@ enum class PredictorSource
     Continuous
 };
 
+// Stores number of samples without NAs in all involved variables in num_samples.
 std::pair<double, double> pairwise_nan_multinomial_regression(
     const DataMatrix& cat_data,
     const DataMatrix& cont_data,
@@ -28,4 +29,5 @@ std::pair<double, double> pairwise_nan_multinomial_regression(
     const std::vector<int>& control_rows_categorical,
     const std::vector<int>& control_rows_continuous,
     double na_value,
-    PredictorSource predictor_source);
+    PredictorSource predictor_source,
+    double& num_samples);

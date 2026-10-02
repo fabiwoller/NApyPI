@@ -224,7 +224,8 @@ std::pair<double, double> pairwise_nan_multinomial_regression(
     const std::vector<int>& control_rows_categorical,
     const std::vector<int>& control_rows_continuous,
     double na_value,
-    PredictorSource predictor_source)
+    PredictorSource predictor_source,
+    double& num_samples)
 {
     const std::vector<int> valid_cols = collect_valid_cols(
         cat_data,
@@ -236,6 +237,7 @@ std::pair<double, double> pairwise_nan_multinomial_regression(
         na_value,
         predictor_source,
         true);
+    num_samples = static_cast<double>(valid_cols.size());
 
     EncodedModel full_model;
     EncodedModel reduced_model;

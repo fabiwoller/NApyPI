@@ -3,23 +3,26 @@
 #include <algorithm>
 #include <cstddef>
 #include <limits>
+#include <tuple>
 #include <utility>
 #include <vector>
 
 using namespace std;
 
-std::pair<DataMatrix, DataMatrix> statistics::multinomial_regression_test_with_nans(
+std::tuple<DataMatrix, DataMatrix, DataMatrix> statistics::multinomial_regression_test_with_nans(
     const DataMatrix& cat_data,
     const DataMatrix& cont_data,
     const std::vector<int>& control_rows_categorical,
     const std::vector<int>& control_rows_continuous,
-    double na_value)
+    double na_value,
+    bool compute_n)
 {
     const size_t num_cat_variables = cat_data.rows();
     const size_t num_cont_variables = cont_data.rows();
     const size_t num_comb_variables = num_cat_variables + num_cont_variables;
     DataMatrix correlations(num_cat_variables, num_comb_variables);
     DataMatrix pvalues(num_cat_variables, num_comb_variables);
+    DataMatrix num_samples = compute_n ? DataMatrix(num_cat_variables, num_comb_variables) : DataMatrix(0, 0);
 
     auto is_control_row = [](const std::vector<int>& control_rows, size_t row_index) {
         return std::find(control_rows.begin(), control_rows.end(), static_cast<int>(row_index)) != control_rows.end();
@@ -38,6 +41,8 @@ std::pair<DataMatrix, DataMatrix> statistics::multinomial_regression_test_with_n
             {
                 correlations(dependent_idx, independent_idx) = std::numeric_limits<double>::quiet_NaN();
                 pvalues(dependent_idx, independent_idx) = std::numeric_limits<double>::quiet_NaN();
+                if (compute_n)
+                    num_samples(dependent_idx, independent_idx) = std::numeric_limits<double>::quiet_NaN();
             }
             continue;
         }
@@ -49,9 +54,12 @@ std::pair<DataMatrix, DataMatrix> statistics::multinomial_regression_test_with_n
             {
                 correlations(dependent_idx, independent_idx) = std::numeric_limits<double>::quiet_NaN();
                 pvalues(dependent_idx, independent_idx) = std::numeric_limits<double>::quiet_NaN();
+                if (compute_n)
+                    num_samples(dependent_idx, independent_idx) = std::numeric_limits<double>::quiet_NaN();
                 continue;
             }
 
+            double n = std::numeric_limits<double>::quiet_NaN();
             const std::pair<double, double> results = pairwise_nan_multinomial_regression(
                 cat_data,
                 cont_data,
@@ -60,9 +68,12 @@ std::pair<DataMatrix, DataMatrix> statistics::multinomial_regression_test_with_n
                 control_rows_categorical,
                 control_rows_continuous,
                 na_value,
-                PredictorSource::Categorical);
+                PredictorSource::Categorical,
+                n);
             correlations(dependent_idx, independent_idx) = std::get<0>(results);
             pvalues(dependent_idx, independent_idx) = std::get<1>(results);
+            if (compute_n)
+                num_samples(dependent_idx, independent_idx) = n;
         }
 
         for (size_t independent_idx = 0; independent_idx < num_cont_variables; ++independent_idx)
@@ -71,9 +82,12 @@ std::pair<DataMatrix, DataMatrix> statistics::multinomial_regression_test_with_n
             {
                 correlations(dependent_idx, num_cat_variables + independent_idx) = std::numeric_limits<double>::quiet_NaN();
                 pvalues(dependent_idx, num_cat_variables + independent_idx) = std::numeric_limits<double>::quiet_NaN();
+                if (compute_n)
+                    num_samples(dependent_idx, num_cat_variables + independent_idx) = std::numeric_limits<double>::quiet_NaN();
                 continue;
             }
 
+            double n = std::numeric_limits<double>::quiet_NaN();
             const std::pair<double, double> results = pairwise_nan_multinomial_regression(
                 cat_data,
                 cont_data,
@@ -82,11 +96,14 @@ std::pair<DataMatrix, DataMatrix> statistics::multinomial_regression_test_with_n
                 control_rows_categorical,
                 control_rows_continuous,
                 na_value,
-                PredictorSource::Continuous);
+                PredictorSource::Continuous,
+                n);
             correlations(dependent_idx, num_cat_variables + independent_idx) = std::get<0>(results);
             pvalues(dependent_idx, num_cat_variables + independent_idx) = std::get<1>(results);
+            if (compute_n)
+                num_samples(dependent_idx, num_cat_variables + independent_idx) = n;
         }
     }
 
-    return std::make_pair(correlations, pvalues);
+    return std::make_tuple(correlations, pvalues, num_samples);
 }

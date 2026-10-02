@@ -5,15 +5,16 @@ from numba.typed import List
 import scipy as sc
 
 @njit(parallel=True, fastmath=False, nogil=True)
-def pearson_numba(data : np.ndarray, nan_value : float, num_threads : int):
+def pearson_numba(data : np.ndarray, nan_value : float, num_threads : int, compute_n : bool):
     """
     Compute numba-optimized Pearson Correlation with pairwise NAN-removal.
     Args:
         data: Data matrix with rows as features and columns as samples.
         nan_value: Float value representing missing value.
         num_threads: Number of numba-threads to use in parallel computation.
+        compute_n: Whether or not to compute the number of pairwise non-NA samples.
 
-    Returns: Pairwise R-squared values matrix and P-values matrix.
+    Returns: Pairwise R-squared values matrix, P-values matrix and sample size matrix (empty if not computed).
     """
     # Set number of desired numba threads.
     set_num_threads(num_threads)
@@ -23,6 +24,10 @@ def pearson_numba(data : np.ndarray, nan_value : float, num_threads : int):
     # Initialize output matrices.
     corr_matrix = np.zeros((num_rows, num_rows), dtype=np.float64)
     pvalue_matrix = np.zeros((num_rows, num_rows), dtype=np.float64)
+    if compute_n:
+        n_matrix = np.zeros((num_rows, num_rows), dtype=np.float64)
+    else:
+        n_matrix = np.zeros((0, 0), dtype=np.float64)
     # Compute all pairwise Pearson correlations of variables (i.e. rows).
     for row1 in prange(num_rows):
         for row2 in range(row1, num_rows):
@@ -40,6 +45,9 @@ def pearson_numba(data : np.ndarray, nan_value : float, num_threads : int):
                     sq_sum2 = sq_sum2 + data[row2, col] * data[row2, col]
                     one_times_two = one_times_two + data[row1, col] * data[row2, col]
                     num_values = num_values + 1
+
+            if compute_n:
+                n_matrix[row1, row2] = n_matrix[row2, row1] = num_values
 
             # Check invalid cases.
             if num_values <= 1:
@@ -68,18 +76,19 @@ def pearson_numba(data : np.ndarray, nan_value : float, num_threads : int):
                     pvalue_matrix[row1, row2] = pvalue_matrix[row2, row1] = pvalue
                     corr_matrix[row1, row2] = corr_matrix[row2, row1] = corr
 
-    return corr_matrix, pvalue_matrix
+    return corr_matrix, pvalue_matrix, n_matrix
 
 @njit(parallel=True, fastmath=False, nogil=True)
-def spearman_numba(data : np.ndarray, nan_value : float, num_threads : int):
+def spearman_numba(data : np.ndarray, nan_value : float, num_threads : int, compute_n : bool):
     """
     Computes numba-optimized Spearman rank correlation with pairwise removal of NAN-values.
 
         data: Data matrix with rows as features and columns as samples.
         nan_value: Float value representing missing value.
         num_threads: Number of numba-threads to use in parallel computation.
+        compute_n: Whether or not to compute the number of pairwise non-NA samples.
 
-    Returns: Pairwise rho-values matrix and P-values matrix.
+    Returns: Pairwise rho-values matrix, P-values matrix and sample size matrix (empty if not computed).
     """
     # Set number of desired numba threads.
     set_num_threads(num_threads)
@@ -89,6 +98,10 @@ def spearman_numba(data : np.ndarray, nan_value : float, num_threads : int):
     # Initialize output matrices.
     corr_matrix = np.zeros((num_rows, num_rows), dtype=np.float64)
     pvalue_matrix = np.zeros((num_rows, num_rows), dtype=np.float64)
+    if compute_n:
+        n_matrix = np.zeros((num_rows, num_rows), dtype=np.float64)
+    else:
+        n_matrix = np.zeros((0, 0), dtype=np.float64)
     row_rank_bins = np.zeros((num_rows, num_samples, num_samples), dtype=np.int32)
 
     # Pre-sort and pre-process rows in parallel.
@@ -204,6 +217,9 @@ def spearman_numba(data : np.ndarray, nan_value : float, num_threads : int):
 
                     subtract_right = subtract_right + subtract_extra
 
+            if compute_n:
+                n_matrix[row1, row2] = n_matrix[row2, row1] = number_non_nas
+
             # Compute Pearson Correlation on rank-transformed data.
             average1 = rank_sum1 / number_non_nas
             average2 = rank_sum2 / number_non_nas
@@ -231,12 +247,12 @@ def spearman_numba(data : np.ndarray, nan_value : float, num_threads : int):
             pvalue_matrix[row1, row2] = pvalue
             pvalue_matrix[row2, row1] = pvalue
 
-    return corr_matrix, pvalue_matrix
+    return corr_matrix, pvalue_matrix, n_matrix
 
 @njit(parallel=True, fastmath=False, nogil=True)
 def chi2_numba(data : np.ndarray, categories_per_var : np.ndarray, nan_value : int,
                is_pvalue : bool, is_chi2 : bool, is_phi : bool, 
-               is_cramers : bool, num_threads : int):
+               is_cramers : bool, num_threads : int, is_n : bool):
     """
     Computes numba-optimized Chi-squared tests with pairwise removal of NAN-values.
 
@@ -248,6 +264,7 @@ def chi2_numba(data : np.ndarray, categories_per_var : np.ndarray, nan_value : i
         is_chi2: Whether or not to return chi2 statistics matrix.
         is_phi: Whether or not to return phi effect size matrix.
         is_cramer: Whether or not to return Cramer's V effect size matrix.
+        is_n: Whether or not to return matrix of pairwise non-NA sample sizes.
 
     Returns: Dictionary storing specified return data matrices.
     """
@@ -269,6 +286,10 @@ def chi2_numba(data : np.ndarray, categories_per_var : np.ndarray, nan_value : i
         phi_matrix = np.zeros((num_rows, num_rows), dtype=np.float64)
     if is_cramers:
         cramers_matrix = np.zeros((num_rows, num_rows), dtype=np.float64)
+    if is_n:
+        n_matrix = np.zeros((num_rows, num_rows), dtype=np.float64)
+    else:
+        n_matrix = np.zeros((0, 0), dtype=np.float64)
     
     # Cast data matrix from float to int to represent categories.
     data = data.astype(np.int32)
@@ -291,6 +312,9 @@ def chi2_numba(data : np.ndarray, categories_per_var : np.ndarray, nan_value : i
                     row1_frequencies[cat1] = row1_frequencies[cat1] + 1
                     row2_frequencies[cat2] = row2_frequencies[cat2] + 1
                     cont_table[cat1, cat2] = cont_table[cat1, cat2] + 1
+
+            if is_n:
+                n_matrix[row1, row2] = n_matrix[row2, row1] = number_non_nas
 
             if number_non_nas == 0.0:
                 if is_chi2:
@@ -354,20 +378,21 @@ def chi2_numba(data : np.ndarray, categories_per_var : np.ndarray, nan_value : i
                 if is_cramers:
                     cramers_matrix[row1, row2] = cramers_matrix[row2, row1] = cramer_value
 
-    return pvalue_matrix, effect_matrix, phi_matrix, cramers_matrix
+    return pvalue_matrix, effect_matrix, phi_matrix, cramers_matrix, n_matrix
 
 @njit(parallel=True, fastmath=False, nogil=True)
 def kruskal_wallis_numba(cat_data : np.ndarray, cont_data : np.ndarray, nan_value : float, category_groups : np.ndarray,
                          num_threads : int, compute_pvalue : bool, compute_h : bool, compute_np2 : bool,
-                         ignore_empty_groups : bool):
+                         ignore_empty_groups : bool, compute_n : bool):
     """
     Computes numba-optimized Kruskal-Wallis test with pairwise removal of NAN-values.
 
         data: Data matrix with rows as features and columns as samples.
         nan_value: Float value representing missing value.
         num_threads: Number of numba-threads to use in parallel computation.
+        compute_n: Whether or not to compute the number of pairwise non-NA samples.
 
-    Returns: Unadjusted P-value matrix and desired selection of effect size matrices.
+    Returns: Unadjusted P-value matrix, desired selection of effect size matrices and sample size matrix.
     """
     # Set number of desired numba threads.
     set_num_threads(num_threads)
@@ -383,6 +408,10 @@ def kruskal_wallis_numba(cat_data : np.ndarray, cont_data : np.ndarray, nan_valu
         h_matrix = np.zeros((num_cat_variables, num_cont_variables), dtype=np.float64)
     if compute_np2:
         np2_matrix = np.zeros((num_cat_variables, num_cont_variables), dtype=np.float64)
+    if compute_n:
+        n_matrix = np.zeros((num_cat_variables, num_cont_variables), dtype=np.float64)
+    else:
+        n_matrix = np.zeros((0, 0), dtype=np.float64)
 
     # Cast data matrix from float to int to represent categories.
     cat_data = cat_data.astype(np.int32)
@@ -462,6 +491,9 @@ def kruskal_wallis_numba(cat_data : np.ndarray, cont_data : np.ndarray, nan_valu
                             tie_correction = tie_correction + (rank_subset_size*rank_subset_size*rank_subset_size - rank_subset_size)
                     subtract_right = subtract_right + subtract_extra
 
+            if compute_n:
+                n_matrix[cat_row, cont_row] = number_non_nas
+
             # Compute H statistic value by aggregating per-category rank sums.
             h_statistic = 0.0
             is_empty_category = False
@@ -516,11 +548,11 @@ def kruskal_wallis_numba(cat_data : np.ndarray, cont_data : np.ndarray, nan_valu
             if compute_h:
                 h_matrix[cat_row, cont_row] = h_statistic
 
-    return pvalue_matrix, h_matrix, np2_matrix
+    return pvalue_matrix, h_matrix, np2_matrix, n_matrix
 
 @njit(parallel=True, fastmath=False, nogil=True)
 def ttest_numba(bin_data : np.ndarray, cont_data : np.ndarray,  nan_value : float, compute_pvalues : bool,
-                compute_t : bool, compute_cohens : bool, use_welch : bool, num_threads : int):
+                compute_t : bool, compute_cohens : bool, use_welch : bool, num_threads : int, compute_n : bool):
     """
     Computes pairwise two-sample ttest for all combinations of variables in binary and cotinuous data.
     Args:
@@ -532,9 +564,10 @@ def ttest_numba(bin_data : np.ndarray, cont_data : np.ndarray,  nan_value : floa
         compute_cohens: Whether or not compute and return cohens_d effect size values.
         use_welch: Whether to use Student's t-test or Welch's t-test.
         num_threads : Number of threads to use in parallel computation.
+        compute_n: Whether or not to compute the number of pairwise non-NA samples.
 
     Returns:
-        Pairwise return type matrix and P-values matrix.
+        Pairwise return type matrix, P-values matrix and sample size matrix.
     """
     # Set number of desired numba threads.
     set_num_threads(num_threads)
@@ -550,6 +583,10 @@ def ttest_numba(bin_data : np.ndarray, cont_data : np.ndarray,  nan_value : floa
         t_matrix = np.zeros((num_bin_variables, num_cont_variables), dtype=np.float64)
     if compute_cohens:
         cohen_matrix = np.zeros((num_bin_variables, num_cont_variables), dtype=np.float64)
+    if compute_n:
+        n_matrix = np.zeros((num_bin_variables, num_cont_variables), dtype=np.float64)
+    else:
+        n_matrix = np.zeros((0, 0), dtype=np.float64)
 
     # Cast data matrix from float to int to represent categories.
     bin_data = bin_data.astype(np.int32)
@@ -569,6 +606,9 @@ def ttest_numba(bin_data : np.ndarray, cont_data : np.ndarray,  nan_value : floa
                     group_sums[entry_bin] = group_sums[entry_bin] + entry_cont
                     group_sums_squared[entry_bin] = group_sums_squared[entry_bin] + entry_cont*entry_cont
                     group_counts[entry_bin] = group_counts[entry_bin] + 1
+
+            if compute_n:
+                n_matrix[bin_row, cont_row] = group_counts[0] + group_counts[1]
 
             # Check if category contains no more elements after NA removal.
             if group_counts[0] <= 1 or group_counts[1] <= 1:
@@ -645,7 +685,7 @@ def ttest_numba(bin_data : np.ndarray, cont_data : np.ndarray,  nan_value : floa
             if compute_cohens:
                 cohen_matrix[bin_row, cont_row] = cohens_value
 
-    return pvalue_matrix, t_matrix, cohen_matrix
+    return pvalue_matrix, t_matrix, cohen_matrix, n_matrix
 
 @njit
 def compute_exact_pvalue(n : int, m : int, u : int):
@@ -697,7 +737,8 @@ def compute_exact_pvalue(n : int, m : int, u : int):
 
 @njit(parallel=True, fastmath=False, nogil=True)
 def mann_whitney_numba(bin_data : np.ndarray, cont_data : np.ndarray,  nan_value : float, compute_pvalues : bool,
-                compute_u : bool, compute_r : bool, compute_rank_biserial : bool, num_threads : int, mode : int):
+                compute_u : bool, compute_r : bool, compute_rank_biserial : bool, num_threads : int, mode : int,
+                compute_n : bool):
     """
         Computes pairwise MWU tests for all combinations of variables in binary and continuous data.
         Args:
@@ -710,8 +751,9 @@ def mann_whitney_numba(bin_data : np.ndarray, cont_data : np.ndarray,  nan_value
             compute_rank_biserial: Whether or not to compute and return rank-biserial correlation values.
             num_threads : Number of threads to use in parallel computation.
             mode: Which mode to use for computation of U statistic (0=='auto', 1=='exact', 2=='asymptotic').
+            compute_n: Whether or not to compute the number of pairwise non-NA samples.
         Returns:
-            Pairwise return type and P-values matrices.
+            Pairwise return type, P-values and sample size matrices.
         """
     # Set number of desired numba threads.
     set_num_threads(num_threads)
@@ -729,6 +771,10 @@ def mann_whitney_numba(bin_data : np.ndarray, cont_data : np.ndarray,  nan_value
         r_matrix = np.zeros((num_bin_variables, num_cont_variables), dtype=np.float64)
     if compute_rank_biserial:
         rb_matrix = np.zeros((num_bin_variables, num_cont_variables), dtype=np.float64)
+    if compute_n:
+        n_matrix = np.zeros((num_bin_variables, num_cont_variables), dtype=np.float64)
+    else:
+        n_matrix = np.zeros((0, 0), dtype=np.float64)
 
     # Cast data matrix from float to int to represent categories.
     bin_data = bin_data.astype(np.int32)
@@ -811,6 +857,9 @@ def mann_whitney_numba(bin_data : np.ndarray, cont_data : np.ndarray,  nan_value
                             tie_correction = tie_correction + (rank_subset_size*rank_subset_size*rank_subset_size - rank_subset_size)
                     subtract_right = subtract_right + subtract_extra
 
+            if compute_n:
+                n_matrix[bin_row, cont_row] = number_non_nas
+
             # Compute U statistic value by aggregating per-category rank sums.
             n1 = group_sizes[0]
             n2 = group_sizes[1]
@@ -876,12 +925,12 @@ def mann_whitney_numba(bin_data : np.ndarray, cont_data : np.ndarray,  nan_value
                 if compute_rank_biserial:
                     rb_matrix[bin_row, cont_row] = rank_biserial
 
-    return pvalue_matrix, u_matrix, r_matrix, rb_matrix
+    return pvalue_matrix, u_matrix, r_matrix, rb_matrix, n_matrix
 
 @njit(parallel=True, fastmath=False, nogil=True)
 def anova_numba(cat_data : np.ndarray, cont_data : np.ndarray, category_groups : np.ndarray,
                 nan_value : float, compute_pvalue : bool, compute_f : bool,
-                compute_np2 : bool, num_threads : int, ignore_empty_groups : bool):
+                compute_np2 : bool, num_threads : int, ignore_empty_groups : bool, compute_n : bool):
     """
     Compute pairwise one-way-ANOVA test for all combinations of categorical and continuous variables.
     Args:
@@ -895,9 +944,10 @@ def anova_numba(cat_data : np.ndarray, cont_data : np.ndarray, category_groups :
         compute_np2: Whether or not to return np2 effect size matrix.
         ignore_empty_groups: Whether or not to exclude empty groups from ANOVA computations due to 
             pairwise missing value removal.
+        compute_n: Whether or not to compute the number of pairwise non-NA samples.
 
     Returns:
-        Pairwise return type matrix and P-values matrix.
+        Pairwise return type matrix, P-values matrix and sample size matrix.
     """
     # Set number of desired numba threads.
     set_num_threads(num_threads)
@@ -913,6 +963,10 @@ def anova_numba(cat_data : np.ndarray, cont_data : np.ndarray, category_groups :
         f_matrix = np.zeros((num_cat_variables, num_cont_variables), dtype=np.float64)
     if compute_np2:
         np2_matrix = np.zeros((num_cat_variables, num_cont_variables), dtype=np.float64)
+    if compute_n:
+        n_matrix = np.zeros((num_cat_variables, num_cont_variables), dtype=np.float64)
+    else:
+        n_matrix = np.zeros((0, 0), dtype=np.float64)
 
     # Cast data matrix from float to int to represent categories.
     cat_data = cat_data.astype(np.int32)
@@ -935,6 +989,9 @@ def anova_numba(cat_data : np.ndarray, cont_data : np.ndarray, category_groups :
                     total_sum = total_sum + entry_cont
                     total_sum_squared = total_sum_squared + entry_cont*entry_cont
                     total_count = total_count + 1
+
+            if compute_n:
+                n_matrix[cat_row, cont_row] = total_count
 
             # Check if any elements remain after NA removal.
             if total_count == 0:
@@ -1043,4 +1100,4 @@ def anova_numba(cat_data : np.ndarray, cont_data : np.ndarray, category_groups :
             if compute_np2:
                 np2_matrix[cat_row, cont_row] = np2_value
 
-    return pvalue_matrix, f_matrix, np2_matrix
+    return pvalue_matrix, f_matrix, np2_matrix, n_matrix
